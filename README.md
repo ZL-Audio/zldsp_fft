@@ -17,7 +17,7 @@ A header-only C++ Fast Fourier Transform (FFT) library built with [Google Highwa
 #include <hwy/highway.h>
 ```
 
-## Integration & Compiler Flags
+## Compiler Flags
 
 To activate SIMD, you must set the correct compilation flags. Highway will automatically detect the target architecture from these flags.
 
@@ -75,12 +75,16 @@ zldsp::fft::RFFT<float> rfft(order);
 
 std::vector<float> real_in(1 << order);
 std::vector<std::complex<float>> complex_out((1 << order) / 2 + 1);
+std::vector<float> sqr_mag_out((1 << order) / 2 + 1);
 
 // forward transform (real to AoS)
 rfft.forward(real_in.data(), complex_out.data());
 
 // backward transform (AoS to real)
 rfft.backward(complex_out.data(), real_in.data());
+
+// forward transform (real to squared magnitude)
+rfft.forward_sqr_mag(real_in.data(), sqr_mag_out.data())
 ```
 
 ### Data Layouts (AoS vs. SoA)

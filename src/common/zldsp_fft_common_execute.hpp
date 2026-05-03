@@ -196,10 +196,10 @@ namespace zldsp::fft::common {
         const size_t micro_fft_size_padded = micro_fft_size + get_transpose_padding<F>();
 
         F* HWY_RESTRICT micro_space0 = state.workspace.get() + 4 * state.macro_stride;
-        F* HWY_RESTRICT micro_space1 = state.workspace.get() + 4 * state.macro_stride + 2 * state.micro_stride;
+        F* HWY_RESTRICT micro_space1 = micro_space0 + 2 * state.micro_stride;
 
         F* HWY_RESTRICT matrix_r = state.workspace.get() + 2 * state.macro_stride;
-        F* HWY_RESTRICT matrix_i = state.workspace.get() + 2 * state.macro_stride + state.micro_segment_size * micro_fft_size_padded;
+        F* HWY_RESTRICT matrix_i = matrix_r + state.micro_segment_size * micro_fft_size_padded;
         std::complex<F>* aos_matrix = reinterpret_cast<std::complex<F>*>(matrix_r);
 
         // execute micro Stockham DIT CFFT
@@ -275,12 +275,44 @@ namespace zldsp::fft::common {
                         }
                         auto vr = hn::Load(d, tmp_r);
                         auto vi = hn::Load(d, tmp_i);
-                        common::store_complex<is_forward>(d, out_ptr.shift(OutPtr::get_complex_offset(out_shift + c)), vr, vi);
+                        common::store_complex<is_forward>(d, out_ptr.shift(OutPtr::get_complex_offset(out_shift + c)),
+                                                          vr, vi);
                     }
                 }
             }
         }
     }
+
+    /**
+     * dispatch RFFT pre-processing and post-processing with the correct SIMD tag
+     */
+    template <typename F, typename Func>
+    HWY_INLINE void dispatch_rfft_tag(const size_t cfft_order, Func&& func) {
+        switch (cfft_order) {
+        case 0:
+        case 1: {
+            func(hn::CappedTag<F, 1>());
+            break;
+        }
+        case 2: {
+            func(hn::CappedTag<F, 2>());
+            break;
+        }
+        case 3: {
+            func(hn::CappedTag<F, 4>());
+            break;
+        }
+        case 4: {
+            func(hn::CappedTag<F, 8>());
+            break;
+        }
+        default: {
+            func(hn::ScalableTag<F>());
+            break;
+        }
+        }
+    }
+
 
     /**
      * execute RFFT forward post-processing, with a given SIMD tag
@@ -294,11 +326,8 @@ namespace zldsp::fft::common {
      * @param out_ptr
      */
     template <class D, typename F, typename OutPtr>
-    HWY_INLINE void execute_rfft_forward_post_internal(
-        D d,
-        const size_t cfft_order,
-        const F* HWY_RESTRICT twiddles,
-        SoAPtr<F> in_soa, OutPtr out_ptr) {
+    HWY_INLINE void execute_rfft_forward_post_internal(D d, const size_t cfft_order, const F* HWY_RESTRICT twiddles,
+                                                       SoAPtr<F> in_soa, OutPtr out_ptr) {
         const size_t cfft_size = 1 << cfft_order;
         static constexpr size_t lanes = hn::Lanes(d);
 
@@ -339,8 +368,7 @@ namespace zldsp::fft::common {
             const auto xi2_tmp = hn::NegMulAdd(si, ws, i2);
             const auto xi_Mk = hn::NegMulAdd(dr, wc, xi2_tmp);
 
-            common::store_complex<true>(d, out_ptr.shift(OutPtr::get_complex_offset(k)),
-                                        xr_k, xi_k);
+            common::store_complex<true>(d, out_ptr.shift(OutPtr::get_complex_offset(k)), xr_k, xi_k);
 
             const auto xr_Mk_rev = hn::Reverse(d, xr_Mk);
             const auto xi_Mk_rev = hn::Reverse(d, xi_Mk);
@@ -360,36 +388,11 @@ namespace zldsp::fft::common {
      * @param out_ptr
      */
     template <typename F, typename OutPtr>
-    HWY_INLINE void execute_rfft_forward_post(
-        const size_t cfft_order,
-        const F* HWY_RESTRICT twiddles,
-        SoAPtr<F> in_soa, OutPtr out_ptr) {
-        switch (cfft_order) {
-        case 0: {
-            execute_rfft_forward_post_internal(hn::CappedTag<F, 1>(), cfft_order, twiddles, in_soa, out_ptr);
-            break;
-        }
-        case 1: {
-            execute_rfft_forward_post_internal(hn::CappedTag<F, 1>(), cfft_order, twiddles, in_soa, out_ptr);
-            break;
-        }
-        case 2: {
-            execute_rfft_forward_post_internal(hn::CappedTag<F, 2>(), cfft_order, twiddles, in_soa, out_ptr);
-            break;
-        }
-        case 3: {
-            execute_rfft_forward_post_internal(hn::CappedTag<F, 4>(), cfft_order, twiddles, in_soa, out_ptr);
-            break;
-        }
-        case 4: {
-            execute_rfft_forward_post_internal(hn::CappedTag<F, 8>(), cfft_order, twiddles, in_soa, out_ptr);
-            break;
-        }
-        default: {
-            execute_rfft_forward_post_internal(hn::ScalableTag<F>(), cfft_order, twiddles, in_soa, out_ptr);
-            break;
-        }
-        }
+    HWY_INLINE void execute_rfft_forward_post(const size_t cfft_order, const F* HWY_RESTRICT twiddles, SoAPtr<F> in_soa,
+                                              OutPtr out_ptr) {
+        dispatch_rfft_tag<F>(cfft_order, [&](auto d) {
+            execute_rfft_forward_post_internal(d, cfft_order, twiddles, in_soa, out_ptr);
+        });
     }
 
     /**
@@ -471,35 +474,94 @@ namespace zldsp::fft::common {
      * @param out_soa
      */
     template <typename F, typename InPtr>
-    HWY_INLINE void execute_rfft_backward_pre(
-        const size_t cfft_order,
-        const F* HWY_RESTRICT twiddles,
-        InPtr in_ptr, SoAPtr<F> out_soa) {
-        switch (cfft_order) {
-        case 0: {
-            execute_rfft_backward_pre_internal(hn::CappedTag<F, 1>(), cfft_order, twiddles, in_ptr, out_soa);
-            break;
+    HWY_INLINE void execute_rfft_backward_pre(const size_t cfft_order, const F* HWY_RESTRICT twiddles, InPtr in_ptr,
+                                              SoAPtr<F> out_soa) {
+        dispatch_rfft_tag<F>(cfft_order, [&](auto d) {
+            execute_rfft_backward_pre_internal(d, cfft_order, twiddles, in_ptr, out_soa);
+        });
+    }
+
+    /**
+     * execute RFFT forward post-processing and compute squared magnitude, with a given SIMD tag
+     * @tparam D
+     * @tparam F
+     * @param d
+     * @param cfft_order
+     * @param twiddles
+     * @param in_soa
+     * @param out_ptr
+     */
+    template <class D, typename F>
+    HWY_INLINE void execute_rfft_forward_sqr_mag_post_internal(D d, const size_t cfft_order,
+                                                               const F* HWY_RESTRICT twiddles, SoAPtr<F> in_soa,
+                                                               F* HWY_RESTRICT out_ptr) {
+
+        const size_t cfft_size = 1 << cfft_order;
+        static constexpr size_t lanes = hn::Lanes(d);
+
+        F r0 = in_soa.real[0];
+        F i0 = in_soa.imag[0];
+
+        const F dc = r0 + i0;
+        const F nyquist = r0 - i0;
+
+        out_ptr[0] = dc * dc;
+        out_ptr[cfft_size] = nyquist * nyquist;
+
+        const size_t num_elements = cfft_size >> 1;
+        const size_t num_blocks = (num_elements + lanes - 1) / lanes;
+
+        for (size_t b = 0; b < num_blocks; ++b) {
+            const size_t k = b * lanes + 1;
+
+            const auto r1 = hn::LoadU(d, in_soa.real + k);
+            const auto i1 = hn::LoadU(d, in_soa.imag + k);
+
+            const auto r2_raw = hn::LoadU(d, in_soa.real + cfft_size - k - lanes + 1);
+            const auto i2_raw = hn::LoadU(d, in_soa.imag + cfft_size - k - lanes + 1);
+
+            const auto r2 = hn::Reverse(d, r2_raw);
+            const auto i2 = hn::Reverse(d, i2_raw);
+
+            const auto wc = hn::Load(d, &twiddles[b * lanes * 2]);
+            const auto ws = hn::Load(d, &twiddles[b * lanes * 2 + lanes]);
+
+            const auto si = hn::Add(i1, i2);
+            const auto dr = hn::Sub(r1, r2);
+
+            const auto xr_tmp = hn::MulAdd(si, wc, r1);
+            const auto xr_k = hn::NegMulAdd(dr, ws, xr_tmp);
+            const auto xi_tmp = hn::NegMulAdd(si, ws, i1);
+            const auto xi_k = hn::NegMulAdd(dr, wc, xi_tmp);
+
+            const auto xr2_tmp = hn::NegMulAdd(si, wc, r2);
+            const auto xr_Mk = hn::MulAdd(dr, ws, xr2_tmp);
+            const auto xi2_tmp = hn::NegMulAdd(si, ws, i2);
+            const auto xi_Mk = hn::NegMulAdd(dr, wc, xi2_tmp);
+
+            const auto mag2_k = hn::MulAdd(xr_k, xr_k, hn::Mul(xi_k, xi_k));
+            const auto mag2_Mk = hn::MulAdd(xr_Mk, xr_Mk, hn::Mul(xi_Mk, xi_Mk));
+
+            hn::StoreU(mag2_k, d, out_ptr + k);
+
+            const auto mag2_Mk_rev = hn::Reverse(d, mag2_Mk);
+            hn::StoreU(mag2_Mk_rev, d, out_ptr + cfft_size - k - lanes + 1);
         }
-        case 1: {
-            execute_rfft_backward_pre_internal(hn::CappedTag<F, 1>(), cfft_order, twiddles, in_ptr, out_soa);
-            break;
-        }
-        case 2: {
-            execute_rfft_backward_pre_internal(hn::CappedTag<F, 2>(), cfft_order, twiddles, in_ptr, out_soa);
-            break;
-        }
-        case 3: {
-            execute_rfft_backward_pre_internal(hn::CappedTag<F, 4>(), cfft_order, twiddles, in_ptr, out_soa);
-            break;
-        }
-        case 4: {
-            execute_rfft_backward_pre_internal(hn::CappedTag<F, 8>(), cfft_order, twiddles, in_ptr, out_soa);
-            break;
-        }
-        default: {
-            execute_rfft_backward_pre_internal(hn::ScalableTag<F>(), cfft_order, twiddles, in_ptr, out_soa);
-            break;
-        }
-        }
+    }
+
+    /**
+     * execute RFFT forward post-processing and compute squared magnitude
+     * @tparam F
+     * @param cfft_order
+     * @param twiddles
+     * @param in_soa
+     * @param out_ptr
+     */
+    template <typename F>
+    HWY_INLINE void execute_rfft_forward_sqr_mag_post(const size_t cfft_order, const F* HWY_RESTRICT twiddles,
+                                                      SoAPtr<F> in_soa, F* HWY_RESTRICT out_ptr) {
+        dispatch_rfft_tag<F>(cfft_order, [&](auto d) {
+            execute_rfft_forward_sqr_mag_post_internal(d, cfft_order, twiddles, in_soa, out_ptr);
+        });
     }
 }

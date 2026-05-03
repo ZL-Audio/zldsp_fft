@@ -22,7 +22,7 @@ namespace zldsp::fft::common {
      */
     template <class D, class V>
     inline void transpose4x4(D d, V v0, V v1, V v2, V v3, V& r0, V& r1, V& r2, V& r3) {
-        const size_t lanes = hn::Lanes(d);
+        static constexpr size_t lanes = hn::Lanes(d);
         using T = hn::TFromD<D>;
 
         const auto t0 = hn::InterleaveLower(d, v0, v1);

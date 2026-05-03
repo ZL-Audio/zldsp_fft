@@ -96,6 +96,18 @@ namespace zldsp::fft {
             execute_backward(common::make_soa(in_buffer), out_buffer);
         }
 
+        /**
+         * real to squared magnitude forward
+         * @param in_buffer
+         * @param out_buffer
+         */
+        void forward_sqr_mag(F* in_buffer, F* out_buffer) {
+            common::execute_cfft<true>(
+                state_, common::make_aos(reinterpret_cast<C*>(in_buffer)), forward_temp_soa_);
+            common::execute_rfft_forward_sqr_mag_post(
+                state_.cfft_order, rfft_twiddles_.get(), forward_temp_soa_, out_buffer);
+        }
+
     private:
         /**
          * execute forward RFFT
