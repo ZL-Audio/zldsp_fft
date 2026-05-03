@@ -22,7 +22,7 @@ namespace zldsp::fft::common {
      */
     template <class D, class V>
     inline void transpose4x4(D d, V v0, V v1, V v2, V v3, V& r0, V& r1, V& r2, V& r3) {
-        static constexpr size_t lanes = hn::Lanes(d);
+        static constexpr size_t lanes = hn::MaxLanes(d);
         using T = hn::TFromD<D>;
 
         const auto t0 = hn::InterleaveLower(d, v0, v1);
@@ -83,7 +83,7 @@ namespace zldsp::fft::common {
         w_ptr = static_cast<const F*>(HWY_ASSUME_ALIGNED(w_ptr, HWY_ALIGNMENT));
 
         static constexpr hn::ScalableTag<F> d;
-        static constexpr size_t lanes = hn::Lanes(d);
+        static constexpr size_t lanes = hn::MaxLanes(d);
 
         const auto quarter_n = n >> 2;
         const auto half_n = n >> 1;
@@ -174,7 +174,7 @@ namespace zldsp::fft::common {
         out_aosoa = static_cast<F*>(HWY_ASSUME_ALIGNED(out_aosoa, HWY_ALIGNMENT));
 
         static constexpr hn::ScalableTag<F> d;
-        static constexpr size_t lanes = hn::Lanes(d);
+        static constexpr size_t lanes = hn::MaxLanes(d);
 
         const size_t quarter_n = n >> 2;
         const size_t in_offset1 = Ptr::get_complex_offset(n >> 2);
@@ -257,7 +257,7 @@ namespace zldsp::fft::common {
         w_ptr = static_cast<const F*>(HWY_ASSUME_ALIGNED(w_ptr, HWY_ALIGNMENT));
 
         static constexpr hn::ScalableTag<F> d;
-        static constexpr size_t lanes = hn::Lanes(d);
+        static constexpr size_t lanes = hn::MaxLanes(d);
         static constexpr size_t step = (lanes > 4) ? lanes : 4;
         static constexpr size_t vecs_per_step = step / lanes;
         static constexpr size_t width4_vec = step;
@@ -398,7 +398,7 @@ namespace zldsp::fft::common {
         w_ptr = static_cast<const F*>(HWY_ASSUME_ALIGNED(w_ptr, HWY_ALIGNMENT));
 
         static constexpr hn::ScalableTag<F> d;
-        static constexpr size_t lanes = hn::Lanes(d);
+        static constexpr size_t lanes = hn::MaxLanes(d);
 
         const size_t quarter_n = n >> 2;
         const size_t half_n = n >> 1;
@@ -484,7 +484,7 @@ namespace zldsp::fft::common {
         out_aosoa = static_cast<F*>(HWY_ASSUME_ALIGNED(out_aosoa, HWY_ALIGNMENT));
 
         static constexpr hn::ScalableTag<F> d;
-        static constexpr size_t lanes = hn::Lanes(d);
+        static constexpr size_t lanes = hn::MaxLanes(d);
 
         const size_t one_eight_n = n >> 3;
 
@@ -679,7 +679,7 @@ namespace zldsp::fft::common {
         out_aosoa = static_cast<F*>(HWY_ASSUME_ALIGNED(out_aosoa, HWY_ALIGNMENT));
 
         static constexpr hn::ScalableTag<F> d;
-        static constexpr size_t lanes = hn::Lanes(d);
+        static constexpr size_t lanes = hn::MaxLanes(d);
 
         const size_t quarter_n = n >> 2;
 
@@ -768,7 +768,7 @@ namespace zldsp::fft::common {
     inline void radix4_dif_aosoa_inplace(F* HWY_RESTRICT workspace,
                                          const size_t n, const size_t width, const F* HWY_RESTRICT w_ptr) {
         static constexpr hn::ScalableTag<F> d;
-        static constexpr size_t lanes = hn::Lanes(d);
+        static constexpr size_t lanes = hn::MaxLanes(d);
 
         const size_t sub_n = width << 2;
 
@@ -863,7 +863,7 @@ namespace zldsp::fft::common {
         out_aosoa = static_cast<F*>(HWY_ASSUME_ALIGNED(out_aosoa, HWY_ALIGNMENT));
 
         static constexpr hn::ScalableTag<F> d;
-        static constexpr size_t lanes = hn::Lanes(d);
+        static constexpr size_t lanes = hn::MaxLanes(d);
 
         const size_t quarter_n = n >> 2;
 
@@ -943,7 +943,7 @@ namespace zldsp::fft::common {
         out_aosoa = static_cast<F*>(HWY_ASSUME_ALIGNED(out_aosoa, HWY_ALIGNMENT));
 
         static constexpr hn::ScalableTag<F> d;
-        static constexpr size_t lanes = hn::Lanes(d);
+        static constexpr size_t lanes = hn::MaxLanes(d);
 
         const size_t one_eight_n = n >> 3;
 

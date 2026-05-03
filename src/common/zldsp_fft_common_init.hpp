@@ -105,8 +105,8 @@ namespace zldsp::fft::common {
     inline void generate_general_twiddles(std::vector<StageType>& stages,
                                           std::vector<size_t>& twiddles_shift,
                                           hwy::AlignedFreeUniquePtr<F[]>& twiddles) {
-        static constexpr size_t lanes = hn::Lanes(hn::ScalableTag<F>());
-        static constexpr size_t width4_vec = std::max(static_cast<size_t>(4), lanes);
+        static constexpr size_t lanes = hn::MaxLanes(hn::ScalableTag<F>());
+        static constexpr size_t width4_vec = std::max<size_t>(4, lanes);
         // calculate twiddle shift for each stage
         {
             size_t width = (stages[0] == StageType::kRadix4FirstPass) ? 4 : 8;
@@ -229,7 +229,7 @@ namespace zldsp::fft::common {
         const size_t num_stages,
         std::vector<size_t>& twiddles_shift,
         hwy::AlignedFreeUniquePtr<F[]>& twiddles) {
-        static constexpr size_t lanes = hn::Lanes(hn::ScalableTag<F>());
+        static constexpr size_t lanes = hn::MaxLanes(hn::ScalableTag<F>());
         const size_t n = static_cast<size_t>(1) << order;
         twiddles_shift.resize(num_stages);
         // calculate twiddle shift for each stage

@@ -137,11 +137,11 @@ namespace zldsp::fft::common {
 
         const size_t l3d = get_l3_cache_size();
         const bool is_safe_l3 = (l3d > (64ULL * 1024 * 1024));
-        size_t switch_order = std::max(max_l1_order + 4, max_l2_order);
+        size_t switch_order = std::max<size_t>(max_l1_order + 4, max_l2_order);
         if (is_safe_l3 && l3d > 0) {
             const size_t max_l3_elements = l3d / (12 * sizeof(F));
             const size_t max_l3_order = (max_l3_elements == 0) ? 0 : std::bit_width(max_l3_elements) - 1;
-            switch_order = std::max(switch_order, max_l3_order);
+            switch_order = std::max<size_t>(switch_order, max_l3_order);
         }
 
         return {max_l1_order, switch_order};

@@ -146,7 +146,7 @@ namespace zldsp::fft::common {
     template <bool is_forward, typename F, typename InPtr, typename OutPtr>
     inline void callback_order_4(InPtr in, OutPtr out, const F* w_r_base, const F* w_i_base) {
         static constexpr hn::ScalableTag<F> d;
-        static constexpr size_t lanes = hn::Lanes(d);
+        static constexpr size_t lanes = hn::MaxLanes(d);
 
         HWY_ALIGN F tmp_r[16];
         HWY_ALIGN F tmp_i[16];
@@ -172,10 +172,9 @@ namespace zldsp::fft::common {
                 const auto diff_i = hn::Sub(A_i, B_i);
 
                 hn::StoreInterleaved4(hn::LowerHalf(d4, out01_r), hn::UpperHalf(d4, out01_r),
-                                      hn::LowerHalf(d4, out23_r),
-                                      hn::UpperHalf(d4, out23_r), d4, tmp_r);
-                hn::StoreInterleaved4(hn::LowerHalf(d4, sum_i), hn::UpperHalf(d4, diff_i), hn::LowerHalf(d4, diff_i),
-                                      hn::UpperHalf(d4, sum_i), d4, tmp_i);
+                                      hn::LowerHalf(d4, out23_r), hn::UpperHalf(d4, out23_r), d4, tmp_r);
+                hn::StoreInterleaved4(hn::LowerHalf(d4, sum_i), hn::UpperHalf(d4, diff_i),
+                    hn::LowerHalf(d4, diff_i), hn::UpperHalf(d4, sum_i), d4, tmp_i);
             }
             hn::Vec<decltype(d4)> t1_r, t1_i;
             {
@@ -290,7 +289,7 @@ namespace zldsp::fft::common {
     template <bool is_forward, typename F, typename InPtr, typename OutPtr>
     inline void callback_order_5(InPtr in, OutPtr out, const F* w_r_base, const F* w_i_base) {
         static constexpr hn::ScalableTag<F> d;
-        static constexpr size_t lanes = hn::Lanes(d);
+        static constexpr size_t lanes = hn::MaxLanes(d);
         static constexpr F kInvSqrt2 = static_cast<F>(1.0 / std::numbers::sqrt2);
 
         HWY_ALIGN F tmp_r[32];
