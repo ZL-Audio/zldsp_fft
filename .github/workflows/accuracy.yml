@@ -1,0 +1,118 @@
+name: Accuracy Test
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+
+concurrency:
+  group: ${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+jobs:
+  build_and_test:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Linux
+            os: ubuntu-latest
+          - name: macOS
+            os: macos-latest
+
+    steps:
+      - name: Checkout zldsp_fft (Library)
+        uses: actions/checkout@v4
+        with:
+          path: zldsp_fft
+
+      - name: Checkout zldsp_fft_develop (Benchmarks)
+        uses: actions/checkout@v4
+        with:
+          repository: ZL-Audio/zldsp_fft_develop
+          path: zldsp_fft_develop
+          submodules: recursive
+
+      - name: Inject Library into Benchmarks
+        shell: bash
+        run: |
+          mkdir -p zldsp_fft_develop/zlfft
+          cp -r zldsp_fft/src/* zldsp_fft_develop/zlfft/
+
+      - name: Show CPU Info (Linux)
+        if: runner.os == 'Linux'
+        run: lscpu
+
+      - name: Show CPU Info (macOS)
+        if: runner.os == 'macOS'
+        run: sysctl -n machdep.cpu.brand_string
+
+      - name: Show CPU Info (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: Get-CimInstance -ClassName Win32_Processor | Select-Object Name, NumberOfCores, NumberOfLogicalProcessors
+
+      - name: CFFT Accuracy Mid Test AVX2 Double (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        working-directory: zldsp_fft_develop
+        run: |
+          python -u benchmark/accuracy_mid_cfft.py 2 20 --avx2 --double
+          python -u benchmark/accuracy_cfft.py 2 20 --avx2 --double
+
+      - name: CFFT Accuracy Mid Test AVX2 (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        working-directory: zldsp_fft_develop
+        run: |
+          python -u benchmark/accuracy_mid_cfft.py 2 20 --avx2
+          python -u benchmark/accuracy_cfft.py 2 20 --avx2
+
+      - name: CFFT Accuracy Mid Test Double
+        shell: bash
+        working-directory: zldsp_fft_develop
+        run: |
+          python -u benchmark/accuracy_mid_cfft.py 2 20 --double
+          python -u benchmark/accuracy_cfft.py 2 20 --double
+
+      - name: CFFT Accuracy Mid Test
+        shell: bash
+        working-directory: zldsp_fft_develop
+        run: |
+          python -u benchmark/accuracy_mid_cfft.py 2 20
+          python -u benchmark/accuracy_cfft.py 2 20
+
+      - name: RFFT Accuracy Mid Test AVX2 Double (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        working-directory: zldsp_fft_develop
+        run: |
+          python -u benchmark/accuracy_mid_rfft.py 2 20 --avx2 --double
+          python -u benchmark/accuracy_rfft.py 2 20 --avx2 --double
+
+      - name: RFFT Accuracy Mid Test AVX2 (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        working-directory: zldsp_fft_develop
+        run: |
+          python -u benchmark/accuracy_mid_rfft.py 2 20 --avx2
+          python -u benchmark/accuracy_rfft.py 2 20 --avx2
+
+      - name: RFFT Accuracy Mid Test Double
+        shell: bash
+        working-directory: zldsp_fft_develop
+        run: |
+          python -u benchmark/accuracy_mid_rfft.py 2 20 --double
+          python -u benchmark/accuracy_rfft.py 2 20 --double
+
+      - name: RFFT Accuracy Mid Test
+        shell: bash
+        working-directory: zldsp_fft_develop
+        run: |
+          python -u benchmark/accuracy_mid_rfft.py 2 20
+          python -u benchmark/accuracy_rfft.py 2 20

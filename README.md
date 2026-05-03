@@ -2,6 +2,8 @@
 
 A header-only C++ Fast Fourier Transform (FFT) library built with [Google Highway](https://github.com/google/highway).
 
+If you want to develop zldsp::fft, please refer to [zldsp_fft_develop](https://github.com/ZL-Audio/zldsp_fft_develop).
+
 ## Key Features
 
 - Header-Only: This library does not require any CMake target or external binary.
