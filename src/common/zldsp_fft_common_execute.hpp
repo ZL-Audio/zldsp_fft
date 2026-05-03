@@ -8,12 +8,13 @@ namespace zldsp::fft::common {
     namespace hn = hwy::HWY_NAMESPACE;
 
     /**
-     * execute CFFT
+     * execute Stockham CFFT
      * @tparam is_forward
      * @tparam F
      * @tparam InPtr
      * @tparam OutPtr
      * @param cfft_order
+     * @param stride
      * @param workspace
      * @param twiddles
      * @param twiddles_shift
@@ -22,8 +23,9 @@ namespace zldsp::fft::common {
      * @param out_ptr
      */
     template <bool is_forward, typename F, typename InPtr, typename OutPtr>
-    HWY_INLINE void execute_cfft(
+    HWY_INLINE void execute_stockham_cfft(
         const size_t cfft_order,
+        const size_t stride,
         F* HWY_RESTRICT workspace,
         const F* HWY_RESTRICT twiddles,
         const std::vector<size_t>& twiddles_shift,
@@ -57,7 +59,7 @@ namespace zldsp::fft::common {
         }
         case 6: {
             F* HWY_RESTRICT in_aosoa = workspace;
-            F* HWY_RESTRICT out_aosoa = workspace + 2 * get_stride<F>(cfft_size);
+            F* HWY_RESTRICT out_aosoa = workspace + 2 * stride;
             const F* HWY_RESTRICT w0 = twiddles;
             common::radix4_first_pass_fused_aosoa<is_forward>(in_ptr, out_aosoa, 64);
             common::radix4_width4_aosoa(out_aosoa, in_aosoa, 64, w0);
@@ -67,7 +69,7 @@ namespace zldsp::fft::common {
         }
         case 7: {
             F* HWY_RESTRICT in_aosoa = workspace;
-            F* HWY_RESTRICT out_aosoa = workspace + 2 * get_stride<F>(cfft_size);
+            F* HWY_RESTRICT out_aosoa = workspace + 2 * stride;
             const F* HWY_RESTRICT w0 = twiddles;
             common::radix8_first_pass_fused_aosoa<is_forward>(in_ptr, out_aosoa, 128);
             common::radix4_aosoa(out_aosoa, in_aosoa, 128, 8, w0);
@@ -77,7 +79,7 @@ namespace zldsp::fft::common {
         }
         case 8: {
             F* HWY_RESTRICT in_aosoa = workspace;
-            F* HWY_RESTRICT out_aosoa = workspace + 2 * get_stride<F>(cfft_size);
+            F* HWY_RESTRICT out_aosoa = workspace + 2 * stride;
             const F* HWY_RESTRICT w0 = twiddles;
             common::radix4_first_pass_fused_aosoa<is_forward>(in_ptr, out_aosoa, 256);
             common::radix4_width4_aosoa(out_aosoa, in_aosoa, 256, w0);
@@ -89,7 +91,7 @@ namespace zldsp::fft::common {
         }
         case 9: {
             F* HWY_RESTRICT in_aosoa = workspace;
-            F* HWY_RESTRICT out_aosoa = workspace + 2 * get_stride<F>(cfft_size);
+            F* HWY_RESTRICT out_aosoa = workspace + 2 * stride;
             const F* HWY_RESTRICT w0 = twiddles;
             common::radix8_first_pass_fused_aosoa<is_forward>(in_ptr, out_aosoa, 512);
             common::radix4_aosoa(out_aosoa, in_aosoa, 512, 8, w0);
@@ -101,7 +103,7 @@ namespace zldsp::fft::common {
         }
         case 10: {
             F* HWY_RESTRICT in_aosoa = workspace;
-            F* HWY_RESTRICT out_aosoa = workspace + 2 * get_stride<F>(cfft_size);
+            F* HWY_RESTRICT out_aosoa = workspace + 2 * stride;
             const F* HWY_RESTRICT w0 = twiddles;
             common::radix4_first_pass_fused_aosoa<is_forward>(in_ptr, out_aosoa, 1024);
             common::radix4_width4_aosoa(out_aosoa, in_aosoa, 1024, w0);
@@ -118,7 +120,7 @@ namespace zldsp::fft::common {
         }
 
         F* HWY_RESTRICT in_aosoa = workspace;
-        F* HWY_RESTRICT out_aosoa = workspace + 2 * get_stride<F>(cfft_size);
+        F* HWY_RESTRICT out_aosoa = workspace + 2 * stride;
         const F* HWY_RESTRICT w_ptr = twiddles;
 
         if (stages[0] == StageType::kRadix4FirstPass) {
@@ -131,23 +133,153 @@ namespace zldsp::fft::common {
         size_t width = (stages[0] == StageType::kRadix4FirstPass) ? 4 : 8;
         for (size_t i = 1; i < stages.size() - 1; ++i) {
             switch (stages[i]) {
-            case common::StageType::kRadix4Width4: {
+            case StageType::kRadix4Width4: {
                 common::radix4_width4_aosoa(in_aosoa, out_aosoa, cfft_size, w_ptr);
-                width = width << 2;
                 break;
             }
-            case common::StageType::kRadix4: {
+            case StageType::kRadix4: {
                 common::radix4_aosoa(in_aosoa, out_aosoa, cfft_size, width, w_ptr);
-                width = width << 2;
                 break;
             }
             default:
                 break;
             }
+            width = width << 2;
             w_ptr += twiddles_shift[i];
             std::swap(in_aosoa, out_aosoa);
         }
         common::radix4_last_pass_fused_aosoa<is_forward>(in_aosoa, out_ptr, cfft_size, width, w_ptr);
+    }
+
+    /**
+     * execute CFFT
+     * @tparam is_forward
+     * @tparam F
+     * @tparam InPtr
+     * @tparam OutPtr
+     * @param state
+     * @param in_ptr
+     * @param out_ptr
+     */
+    template <bool is_forward, typename F, typename InPtr, typename OutPtr>
+    HWY_INLINE void execute_cfft(const CFFTState<F>& state, InPtr in_ptr, OutPtr out_ptr) {
+        // small FFT, dispatch to pure Stockham CFFT
+        if (state.num_macro_stages == 0) {
+            execute_stockham_cfft<is_forward, F, InPtr, OutPtr>(
+                state.micro_cfft_order,
+                state.micro_stride,
+                state.workspace.get(),
+                state.micro_twiddles.get(),
+                state.micro_twiddles_shift,
+                state.micro_stages,
+                in_ptr, out_ptr);
+            return;
+        }
+        static constexpr hn::ScalableTag<F> d;
+        static constexpr size_t lanes = hn::Lanes(d);
+        static constexpr bool is_soa = std::is_same_v<OutPtr, SoAPtr<F>>;
+        // execute macro Cooley-Tukey DIF CFFT
+        {
+            F* HWY_RESTRICT macro_space = state.workspace.get();
+            const F* HWY_RESTRICT w_ptr = state.macro_twiddles.get();
+            common::radix4_first_pass_dif_fused_aosoa<is_forward>(in_ptr, macro_space, state.cfft_size, w_ptr);
+            w_ptr += state.macro_twiddles_shift[0];
+
+            for (size_t i = 1; i < state.num_macro_stages; ++i) {
+                size_t width = state.cfft_size >> (2 * i + 2);
+                common::radix4_dif_aosoa_inplace(macro_space, state.cfft_size, width, w_ptr);
+                w_ptr += state.macro_twiddles_shift[i];
+            }
+        }
+
+        const size_t micro_fft_size = static_cast<size_t>(1) << state.micro_cfft_order;
+        const size_t micro_fft_size_padded = micro_fft_size + get_transpose_padding<F>();
+
+        F* HWY_RESTRICT micro_space0 = state.workspace.get() + 4 * state.macro_stride;
+        F* HWY_RESTRICT micro_space1 = state.workspace.get() + 4 * state.macro_stride + 2 * state.micro_stride;
+
+        F* HWY_RESTRICT matrix_r = state.workspace.get() + 2 * state.macro_stride;
+        F* HWY_RESTRICT matrix_i = state.workspace.get() + 2 * state.macro_stride + state.micro_segment_size * micro_fft_size_padded;
+        std::complex<F>* aos_matrix = reinterpret_cast<std::complex<F>*>(matrix_r);
+
+        // execute micro Stockham DIT CFFT
+        static constexpr size_t MACRO_TILE_C = 64;
+        static constexpr size_t MACRO_TILE_K = 64;
+        for (size_t c_macro = 0; c_macro < state.micro_segment_size; c_macro += MACRO_TILE_C) {
+            const size_t c_max = std::min(c_macro + MACRO_TILE_C, state.micro_segment_size);
+            const size_t c_chunk_size = c_max - c_macro;
+            // execute micro Stockham DIT CFFT (from the digital reverse block)
+            for (size_t c_offset = 0; c_offset < c_chunk_size; ++c_offset) {
+                const size_t reversed_c = c_macro + c_offset;
+                const size_t l_idx = state.digit_rev_4[reversed_c];
+
+                F* HWY_RESTRICT current_in = state.workspace.get() + 2 * l_idx * micro_fft_size;
+                F* HWY_RESTRICT current_out = micro_space0;
+
+                if (state.micro_stages[0] == StageType::kRadix4FirstPass) {
+                    common::radix4_first_pass_aosoa(current_in, current_out, micro_fft_size);
+                } else {
+                    common::radix8_first_pass_aosoa(current_in, current_out, micro_fft_size);
+                }
+
+                current_in = micro_space0;
+                current_out = micro_space1;
+                const F* HWY_RESTRICT w_ptr = state.micro_twiddles.get();
+                size_t width = (state.micro_stages[0] == StageType::kRadix4FirstPass) ? 4 : 8;
+                for (size_t i = 1; i < state.micro_stages.size() - 1; ++i) {
+                    const auto stage = state.micro_stages[i];
+                    switch (stage) {
+                    case StageType::kRadix4Width4: {
+                        common::radix4_width4_aosoa(current_in, current_out, micro_fft_size, w_ptr);
+                        break;
+                    }
+                    case StageType::kRadix4: {
+                        common::radix4_aosoa(current_in, current_out, micro_fft_size, width, w_ptr);
+                        break;
+                    }
+                    default:
+                        break;
+                    }
+                    width = width << 2;
+                    w_ptr += state.micro_twiddles_shift[i];
+                    std::swap(current_in, current_out);
+                }
+                if constexpr (is_soa) {
+                    SoAPtr<F> out_soa_ptr = make_soa<F>({
+                        matrix_r + (c_macro + c_offset) * micro_fft_size_padded,
+                        matrix_i + (c_macro + c_offset) * micro_fft_size_padded
+                    });
+                    common::radix4_last_pass_fused_aosoa<true>(current_in, out_soa_ptr, micro_fft_size, width, w_ptr);
+                } else {
+                    AoSPtr<F> out_aos = make_aos<F>(aos_matrix + (c_macro + c_offset) * micro_fft_size_padded);
+                    common::radix4_last_pass_fused_aosoa<true>(current_in, out_aos, micro_fft_size, width, w_ptr);
+                }
+            }
+            // perform local matrix transpose
+            for (size_t k_macro = 0; k_macro < micro_fft_size; k_macro += MACRO_TILE_K) {
+                const size_t k_max = std::min(k_macro + MACRO_TILE_K, micro_fft_size);
+                for (size_t k = k_macro; k < k_max; ++k) {
+                    const size_t out_shift = k * state.micro_segment_size + c_macro;
+                    for (size_t c = 0; c < c_chunk_size; c += lanes) {
+                        alignas(HWY_ALIGNMENT) F tmp_r[32];
+                        alignas(HWY_ALIGNMENT) F tmp_i[32];
+                        const size_t vec_len = std::min(lanes, c_chunk_size - c);
+                        for (size_t i = 0; i < vec_len; ++i) {
+                            if constexpr (is_soa) {
+                                tmp_r[i] = matrix_r[(c_macro + c + i) * micro_fft_size_padded + k];
+                                tmp_i[i] = matrix_i[(c_macro + c + i) * micro_fft_size_padded + k];
+                            } else {
+                                tmp_r[i] = aos_matrix[(c_macro + c + i) * micro_fft_size_padded + k].real();
+                                tmp_i[i] = aos_matrix[(c_macro + c + i) * micro_fft_size_padded + k].imag();
+                            }
+                        }
+                        auto vr = hn::Load(d, tmp_r);
+                        auto vi = hn::Load(d, tmp_i);
+                        common::store_complex<is_forward>(d, out_ptr.shift(OutPtr::get_complex_offset(out_shift + c)), vr, vi);
+                    }
+                }
+            }
+        }
     }
 
     /**

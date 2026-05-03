@@ -2,7 +2,8 @@
 
 #include <array>
 
-#include "zldsp_fft_common_execute.hpp"
+#include "common/zldsp_fft_common_init.hpp"
+#include "common/zldsp_fft_common_execute.hpp"
 
 namespace zldsp::fft {
     namespace hn = hwy::HWY_NAMESPACE;
@@ -12,27 +13,21 @@ namespace zldsp::fft {
         using C = std::complex<F>;
 
     private:
-        size_t cfft_size_;
-        size_t cfft_order_;
-        hwy::AlignedFreeUniquePtr<F[]> workspace_;
-        hwy::AlignedFreeUniquePtr<F[]> twiddles_;
-        std::vector<size_t> twiddles_shift_;
-        std::vector<common::StageType> stages_;
+        common::CFFTState<F> state_;
 
     public:
-        explicit CFFT(const size_t cfft_order) :
-            cfft_size_(1 << cfft_order),
-            cfft_order_(cfft_order) {
-            common::init_cfft_state(cfft_order_, stages_,
-                                    twiddles_shift_, twiddles_, workspace_);
+        explicit CFFT(const size_t cfft_order) {
+            state_.cfft_size = 1 << cfft_order;
+            state_.cfft_order = cfft_order;
+            common::init_cfft_state(cfft_order, state_);
         }
 
         [[nodiscard]] size_t get_size() const {
-            return cfft_size_;
+            return state_.cfft_size;
         }
 
         [[nodiscard]] size_t get_order() const {
-            return cfft_order_;
+            return state_.cfft_order;
         }
 
         /**
@@ -118,10 +113,7 @@ namespace zldsp::fft {
          */
         template <bool is_forward, typename InPtr, typename OutPtr>
         void execute(InPtr in_ptr, OutPtr out_ptr) {
-            common::execute_cfft<is_forward, F, InPtr, OutPtr>(
-                cfft_order_, workspace_.get(),
-                twiddles_.get(), twiddles_shift_, stages_,
-                in_ptr, out_ptr);
+            common::execute_cfft<is_forward>(state_, in_ptr, out_ptr);
         }
     };
 }

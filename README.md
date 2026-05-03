@@ -6,7 +6,7 @@ A header-only C++ Fast Fourier Transform (FFT) library built with [Google Highwa
 
 - Header-Only: This library does not require any CMake target or external binary.
 - Cross-Platform SIMD: This library supports SSE2/SSE4/AVX2/NEON.
-- Flexible Data Layouts: This library supports AoS/SoA for complex numbers
+- Flexible Data Layouts: This library supports AoS/SoA for complex numbers.
 
 ## Requirements
 

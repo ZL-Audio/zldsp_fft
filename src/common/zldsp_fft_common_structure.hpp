@@ -32,6 +32,17 @@ namespace zldsp::fft::common {
         }
     };
 
+    /**
+     * load complex numbers from ptr to SIMD register
+     * @tparam is_forward
+     * @tparam D
+     * @tparam Ptr
+     * @tparam V
+     * @param d
+     * @param ptr
+     * @param r
+     * @param i
+     */
     template <bool is_forward, class D, typename Ptr, typename V>
     HWY_INLINE void load_complex(D d, Ptr ptr, V& r, V& i) {
         using F = hn::TFromD<D>;
@@ -52,6 +63,17 @@ namespace zldsp::fft::common {
         }
     }
 
+    /**
+     * store complex numbers from SIMD register to ptr
+     * @tparam is_forward
+     * @tparam D
+     * @tparam Ptr
+     * @tparam V
+     * @param d
+     * @param ptr
+     * @param r
+     * @param i
+     */
     template <bool is_forward, class D, typename Ptr, typename V>
     HWY_INLINE void store_complex(D d, Ptr ptr, const V r, const V i) {
         using F = hn::TFromD<D>;
@@ -72,6 +94,15 @@ namespace zldsp::fft::common {
         }
     }
 
+    /**
+     * load complex numbers from ptr to scalar
+     * @tparam is_forward
+     * @tparam F
+     * @tparam Ptr
+     * @param ptr
+     * @param r
+     * @param i
+     */
     template <bool is_forward, typename F, typename Ptr>
     HWY_INLINE void load_scalar(Ptr ptr, F& r, F& i) {
         if constexpr (std::is_same_v<Ptr, SoAPtr<F>>) {
@@ -83,6 +114,15 @@ namespace zldsp::fft::common {
         }
     }
 
+    /**
+     * store complex numbers from scalar to ptr
+     * @tparam is_forward
+     * @tparam F
+     * @tparam Ptr
+     * @param ptr
+     * @param r
+     * @param i
+     */
     template <bool is_forward, typename F, typename Ptr>
     HWY_INLINE void store_scalar(Ptr ptr, const F r, const F i) {
         if constexpr (std::is_same_v<Ptr, SoAPtr<F>>) {
@@ -94,13 +134,25 @@ namespace zldsp::fft::common {
         }
     }
 
+    /**
+     * make a AoSPtr from a complex pointer
+     * @tparam F
+     * @param ptr
+     * @return
+     */
     template <typename F>
-    static common::AoSPtr<F> make_aos(std::complex<F>* ptr) {
-        return common::AoSPtr<F>{reinterpret_cast<F*>(ptr)};
+    static AoSPtr<F> make_aos(std::complex<F>* ptr) {
+        return AoSPtr<F>{reinterpret_cast<F*>(ptr)};
     }
 
+    /**
+     * make a SoAPtr from two real/imag pointers
+     * @tparam F
+     * @param ptr
+     * @return
+     */
     template <typename F>
-    static common::SoAPtr<F> make_soa(std::array<F*, 2> ptr) {
-        return common::SoAPtr<F>{ptr[0], ptr[1]};
+    static SoAPtr<F> make_soa(std::array<F*, 2> ptr) {
+        return SoAPtr<F>{ptr[0], ptr[1]};
     }
 }
