@@ -27,12 +27,12 @@ jobs:
 
     steps:
       - name: Checkout zldsp_fft (Library)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           path: zldsp_fft
 
       - name: Checkout zldsp_fft_develop (Benchmarks)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           repository: ZL-Audio/zldsp_fft_develop
           path: zldsp_fft_develop
