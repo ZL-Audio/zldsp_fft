@@ -75,8 +75,7 @@ namespace zldsp::fft::common {
      * @param w_ptr
      */
     template <typename F>
-    inline void radix4_aosoa(const F* HWY_RESTRICT in_aosoa,
-                             F* HWY_RESTRICT out_aosoa,
+    inline void radix4_aosoa(const F* HWY_RESTRICT in_aosoa, F* HWY_RESTRICT out_aosoa,
                              const size_t n, const size_t width, const F* HWY_RESTRICT w_ptr) {
         in_aosoa = static_cast<const F*>(HWY_ASSUME_ALIGNED(in_aosoa, HWY_ALIGNMENT));
         out_aosoa = static_cast<F*>(HWY_ASSUME_ALIGNED(out_aosoa, HWY_ALIGNMENT));
@@ -168,8 +167,7 @@ namespace zldsp::fft::common {
      * @param n
      */
     template <bool is_forward, typename F, typename Ptr>
-    inline void radix4_first_pass_fused_aosoa(Ptr in,
-                                              F* HWY_RESTRICT out_aosoa,
+    inline void radix4_first_pass_fused_aosoa(Ptr in, F* HWY_RESTRICT out_aosoa,
                                               const size_t n) {
         out_aosoa = static_cast<F*>(HWY_ASSUME_ALIGNED(out_aosoa, HWY_ALIGNMENT));
 
@@ -249,8 +247,7 @@ namespace zldsp::fft::common {
      * @param w_ptr
      */
     template <typename F>
-    inline void radix4_width4_aosoa(const F* HWY_RESTRICT in_aosoa,
-                                    F* HWY_RESTRICT out_aosoa,
+    inline void radix4_width4_aosoa(const F* HWY_RESTRICT in_aosoa, F* HWY_RESTRICT out_aosoa,
                                     const size_t n, const F* HWY_RESTRICT w_ptr) {
         in_aosoa = static_cast<const F*>(HWY_ASSUME_ALIGNED(in_aosoa, HWY_ALIGNMENT));
         out_aosoa = static_cast<F*>(HWY_ASSUME_ALIGNED(out_aosoa, HWY_ALIGNMENT));
@@ -391,8 +388,7 @@ namespace zldsp::fft::common {
      * @param w_ptr
      */
     template <bool is_forward, typename F, typename Ptr>
-    inline void radix4_last_pass_fused_aosoa(const F* HWY_RESTRICT in_aosoa,
-                                             Ptr out,
+    inline void radix4_last_pass_fused_aosoa(const F* HWY_RESTRICT in_aosoa, Ptr out,
                                              const size_t n, const size_t width, const F* HWY_RESTRICT w_ptr) {
         in_aosoa = static_cast<const F*>(HWY_ASSUME_ALIGNED(in_aosoa, HWY_ALIGNMENT));
         w_ptr = static_cast<const F*>(HWY_ASSUME_ALIGNED(w_ptr, HWY_ALIGNMENT));
@@ -478,8 +474,7 @@ namespace zldsp::fft::common {
      * @param n
      */
     template <bool is_forward, typename F, typename Ptr>
-    inline void radix8_first_pass_fused_aosoa(Ptr in,
-                                              F* HWY_RESTRICT out_aosoa,
+    inline void radix8_first_pass_fused_aosoa(Ptr in, F* HWY_RESTRICT out_aosoa,
                                               const size_t n) {
         out_aosoa = static_cast<F*>(HWY_ASSUME_ALIGNED(out_aosoa, HWY_ALIGNMENT));
 
@@ -672,8 +667,7 @@ namespace zldsp::fft::common {
      * @param w_ptr
      */
     template <bool is_forward, typename F, typename Ptr>
-    inline void radix4_first_pass_dif_fused_aosoa(Ptr in,
-                                                  F* HWY_RESTRICT out_aosoa,
+    inline void radix4_first_pass_dif_fused_aosoa(Ptr in, F* HWY_RESTRICT out_aosoa,
                                                   const size_t n,
                                                   const F* HWY_RESTRICT w_ptr) {
         out_aosoa = static_cast<F*>(HWY_ASSUME_ALIGNED(out_aosoa, HWY_ALIGNMENT));
@@ -856,8 +850,7 @@ namespace zldsp::fft::common {
      * @param n
      */
     template <typename F>
-    inline void radix4_first_pass_aosoa(const F* HWY_RESTRICT in_aosoa,
-                                        F* HWY_RESTRICT out_aosoa,
+    inline void radix4_first_pass_aosoa(const F* HWY_RESTRICT in_aosoa, F* HWY_RESTRICT out_aosoa,
                                         const size_t n) {
         in_aosoa = static_cast<const F*>(HWY_ASSUME_ALIGNED(in_aosoa, HWY_ALIGNMENT));
         out_aosoa = static_cast<F*>(HWY_ASSUME_ALIGNED(out_aosoa, HWY_ALIGNMENT));
@@ -937,8 +930,7 @@ namespace zldsp::fft::common {
      * @param n
      */
     template <typename F>
-    inline void radix8_first_pass_aosoa(F* HWY_RESTRICT in_aosoa,
-                                        F* HWY_RESTRICT out_aosoa,
+    inline void radix8_first_pass_aosoa(F* HWY_RESTRICT in_aosoa, F* HWY_RESTRICT out_aosoa,
                                         const size_t n) {
         out_aosoa = static_cast<F*>(HWY_ASSUME_ALIGNED(out_aosoa, HWY_ALIGNMENT));
 
