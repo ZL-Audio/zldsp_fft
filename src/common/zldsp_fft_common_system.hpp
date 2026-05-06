@@ -129,18 +129,24 @@ namespace zldsp::fft::common {
     std::pair<size_t, size_t> get_switch_order() {
         const size_t l1d = get_l1d_cache_size();
         const size_t max_l1_elements = l1d / (8 * sizeof(F));
-        const size_t max_l1_order = (max_l1_elements == 0) ? 0 : std::bit_width(max_l1_elements) - 1;
+        const size_t max_l1_order = (max_l1_elements == 0)
+            ? static_cast<size_t>(0)
+            : static_cast<size_t>(std::bit_width(max_l1_elements) - 1);
 
         const size_t l2d = get_l2_cache_size();
         const size_t max_l2_elements = l2d / (12 * sizeof(F));
-        const size_t max_l2_order = (max_l2_elements == 0) ? 0 : std::bit_width(max_l2_elements) - 1;
+        const size_t max_l2_order = (max_l2_elements == 0)
+            ? static_cast<size_t>(0)
+            : static_cast<size_t>(std::bit_width(max_l2_elements) - 1);
 
         const size_t l3d = get_l3_cache_size();
         const bool is_safe_l3 = (l3d > (64ULL * 1024 * 1024));
         size_t switch_order = std::max<size_t>(max_l1_order + 4, max_l2_order);
         if (is_safe_l3 && l3d > 0) {
             const size_t max_l3_elements = l3d / (12 * sizeof(F));
-            const size_t max_l3_order = (max_l3_elements == 0) ? 0 : std::bit_width(max_l3_elements) - 1;
+            const size_t max_l3_order = (max_l3_elements == 0)
+                ? static_cast<size_t>(0)
+                : static_cast<size_t>(std::bit_width(max_l3_elements) - 1);
             switch_order = std::max<size_t>(switch_order, max_l3_order);
         }
 
