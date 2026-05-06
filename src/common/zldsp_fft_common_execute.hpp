@@ -124,22 +124,18 @@ namespace zldsp::fft::common {
         } else {
             common::radix8_first_pass_fused_aosoa<is_forward>(in_ptr, out_aosoa, cfft_size);
         }
-        std::swap(in_aosoa, out_aosoa);
-
         size_t width = (stages[0] == StageType::kRadix4FirstPass) ? 4 : 8;
-        for (size_t i = 1; i < stages.size() - 1; ++i) {
-            switch (stages[i]) {
-            case StageType::kRadix4Width4: {
-                common::radix4_width4_aosoa(in_aosoa, out_aosoa, cfft_size, w_ptr);
-                break;
+        {
+            if (stages[1] == StageType::kRadix4Width4) {
+                common::radix4_width4_aosoa(out_aosoa, in_aosoa, cfft_size, w_ptr);
+            } else {
+                common::radix4_aosoa(out_aosoa, in_aosoa, cfft_size, width, w_ptr);
             }
-            case StageType::kRadix4: {
-                common::radix4_aosoa(in_aosoa, out_aosoa, cfft_size, width, w_ptr);
-                break;
-            }
-            default:
-                break;
-            }
+            width = width << 2;
+            w_ptr += twiddles_shift[1];
+        }
+        for (size_t i = 2; i < stages.size() - 1; ++i) {
+            common::radix4_aosoa(in_aosoa, out_aosoa, cfft_size, width, w_ptr);
             width = width << 2;
             w_ptr += twiddles_shift[i];
             std::swap(in_aosoa, out_aosoa);
@@ -217,25 +213,22 @@ namespace zldsp::fft::common {
                 } else {
                     common::radix8_first_pass_aosoa(current_in, current_out, micro_fft_size);
                 }
-
                 current_in = micro_space0;
                 current_out = micro_space1;
                 const F* HWY_RESTRICT w_ptr = state.micro_twiddles.get();
                 size_t width = (state.micro_stages[0] == StageType::kRadix4FirstPass) ? 4 : 8;
-                for (size_t i = 1; i < state.micro_stages.size() - 1; ++i) {
-                    const auto stage = state.micro_stages[i];
-                    switch (stage) {
-                    case StageType::kRadix4Width4: {
+                {
+                    if (state.micro_stages[1] == StageType::kRadix4Width4) {
                         common::radix4_width4_aosoa(current_in, current_out, micro_fft_size, w_ptr);
-                        break;
-                    }
-                    case StageType::kRadix4: {
+                    } else {
                         common::radix4_aosoa(current_in, current_out, micro_fft_size, width, w_ptr);
-                        break;
                     }
-                    default:
-                        break;
-                    }
+                    width = width << 2;
+                    w_ptr += state.micro_twiddles_shift[1];
+                    std::swap(current_in, current_out);
+                }
+                for (size_t i = 2; i < state.micro_stages.size() - 1; ++i) {
+                    common::radix4_aosoa(current_in, current_out, micro_fft_size, width, w_ptr);
                     width = width << 2;
                     w_ptr += state.micro_twiddles_shift[i];
                     std::swap(current_in, current_out);
