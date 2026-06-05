@@ -79,7 +79,6 @@ namespace zldsp::fft::common {
                              const size_t n, const size_t width, const F* HWY_RESTRICT w_ptr) {
         in_aosoa = static_cast<const F*>(HWY_ASSUME_ALIGNED(in_aosoa, HWY_ALIGNMENT));
         out_aosoa = static_cast<F*>(HWY_ASSUME_ALIGNED(out_aosoa, HWY_ALIGNMENT));
-        w_ptr = static_cast<const F*>(HWY_ASSUME_ALIGNED(w_ptr, HWY_ALIGNMENT));
 
         static constexpr hn::ScalableTag<F> d;
         static constexpr size_t lanes = hn::MaxLanes(d);
@@ -251,7 +250,6 @@ namespace zldsp::fft::common {
                                     const size_t n, const F* HWY_RESTRICT w_ptr) {
         in_aosoa = static_cast<const F*>(HWY_ASSUME_ALIGNED(in_aosoa, HWY_ALIGNMENT));
         out_aosoa = static_cast<F*>(HWY_ASSUME_ALIGNED(out_aosoa, HWY_ALIGNMENT));
-        w_ptr = static_cast<const F*>(HWY_ASSUME_ALIGNED(w_ptr, HWY_ALIGNMENT));
 
         static constexpr hn::ScalableTag<F> d;
         static constexpr size_t lanes = hn::MaxLanes(d);
@@ -391,7 +389,6 @@ namespace zldsp::fft::common {
     inline void radix4_last_pass_fused_aosoa(const F* HWY_RESTRICT in_aosoa, Ptr out,
                                              const size_t n, const size_t width, const F* HWY_RESTRICT w_ptr) {
         in_aosoa = static_cast<const F*>(HWY_ASSUME_ALIGNED(in_aosoa, HWY_ALIGNMENT));
-        w_ptr = static_cast<const F*>(HWY_ASSUME_ALIGNED(w_ptr, HWY_ALIGNMENT));
 
         static constexpr hn::ScalableTag<F> d;
         static constexpr size_t lanes = hn::MaxLanes(d);
