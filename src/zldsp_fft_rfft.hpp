@@ -65,7 +65,7 @@ namespace zldsp::fft {
          * @param in_buffer
          * @param out_buffer
          */
-        void forward(F* in_buffer, C* out_buffer) {
+        void forward(F* in_buffer, C* out_buffer) noexcept {
             execute_forward(in_buffer, common::make_aos(out_buffer));
         }
 
@@ -74,7 +74,7 @@ namespace zldsp::fft {
          * @param in_buffer
          * @param out_buffer
          */
-        void forward(F* in_buffer, std::array<F*, 2> out_buffer) {
+        void forward(F* in_buffer, std::array<F*, 2> out_buffer) noexcept {
             execute_forward(in_buffer, common::make_soa(out_buffer));
         }
 
@@ -83,7 +83,7 @@ namespace zldsp::fft {
          * @param in_buffer
          * @param out_buffer
          */
-        void backward(C* in_buffer, F* out_buffer) {
+        void backward(C* in_buffer, F* out_buffer) noexcept {
             execute_backward(common::make_aos(in_buffer), out_buffer);
         }
 
@@ -92,7 +92,7 @@ namespace zldsp::fft {
          * @param in_buffer
          * @param out_buffer
          */
-        void backward(std::array<F*, 2> in_buffer, F* out_buffer) {
+        void backward(std::array<F*, 2> in_buffer, F* out_buffer) noexcept {
             execute_backward(common::make_soa(in_buffer), out_buffer);
         }
 
@@ -101,7 +101,7 @@ namespace zldsp::fft {
          * @param in_buffer
          * @param out_buffer
          */
-        void forward_sqr_mag(F* in_buffer, F* out_buffer) {
+        void forward_sqr_mag(F* in_buffer, F* out_buffer) noexcept {
             common::execute_cfft<true>(
                 state_, common::make_aos(reinterpret_cast<C*>(in_buffer)), forward_temp_soa_);
             common::execute_rfft_forward_sqr_mag_post(
@@ -130,7 +130,7 @@ namespace zldsp::fft {
          * @param out_ptr
          */
         template <typename InPtr>
-        void execute_backward(InPtr in_ptr, F* out_ptr) {
+        void execute_backward(InPtr in_ptr, F* out_ptr) noexcept {
             common::execute_rfft_backward_pre(
                 state_.cfft_order, rfft_twiddles_.get(), in_ptr, backward_temp_soa_);
             common::execute_cfft<false>(

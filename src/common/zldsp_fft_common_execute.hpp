@@ -26,7 +26,7 @@ namespace zldsp::fft::common {
     HWY_INLINE void execute_stockham_cfft(const size_t cfft_order, const size_t stride, F* HWY_RESTRICT workspace,
                                           const F* HWY_RESTRICT twiddles, const std::vector<size_t>& twiddles_shift,
                                           const std::vector<StageType>& stages,
-                                          InPtr in_ptr, OutPtr out_ptr) {
+                                          InPtr in_ptr, OutPtr out_ptr) noexcept {
         const size_t cfft_size = 1 << cfft_order;
         switch (cfft_order) {
         case 0: {
@@ -154,7 +154,7 @@ namespace zldsp::fft::common {
      * @param out_ptr
      */
     template <bool is_forward, typename F, typename InPtr, typename OutPtr>
-    HWY_INLINE void execute_cfft(const CFFTState<F>& state, InPtr in_ptr, OutPtr out_ptr) {
+    HWY_INLINE void execute_cfft(const CFFTState<F>& state, InPtr in_ptr, OutPtr out_ptr) noexcept {
         // small FFT, dispatch to pure Stockham CFFT
         if (state.num_macro_stages == 0) {
             execute_stockham_cfft<is_forward, F, InPtr, OutPtr>(
@@ -276,7 +276,7 @@ namespace zldsp::fft::common {
      * dispatch RFFT pre-processing and post-processing with the correct SIMD tag
      */
     template <typename F, typename Func>
-    HWY_INLINE void dispatch_rfft_tag(const size_t cfft_order, Func&& func) {
+    HWY_INLINE void dispatch_rfft_tag(const size_t cfft_order, Func&& func) noexcept {
         switch (cfft_order) {
         case 0:
         case 1: {
@@ -316,7 +316,7 @@ namespace zldsp::fft::common {
      */
     template <class D, typename F, typename OutPtr>
     HWY_INLINE void execute_rfft_forward_post_internal(D d, const size_t cfft_order, const F* HWY_RESTRICT twiddles,
-                                                       SoAPtr<F> in_soa, OutPtr out_ptr) {
+                                                       SoAPtr<F> in_soa, OutPtr out_ptr) noexcept {
         const size_t cfft_size = 1 << cfft_order;
         static constexpr size_t lanes = hn::MaxLanes(d);
 
@@ -377,8 +377,8 @@ namespace zldsp::fft::common {
      * @param out_ptr
      */
     template <typename F, typename OutPtr>
-    HWY_INLINE void execute_rfft_forward_post(const size_t cfft_order, const F* HWY_RESTRICT twiddles, SoAPtr<F> in_soa,
-                                              OutPtr out_ptr) {
+    HWY_INLINE void execute_rfft_forward_post(const size_t cfft_order, const F* HWY_RESTRICT twiddles,
+                                              SoAPtr<F> in_soa, OutPtr out_ptr) noexcept {
         dispatch_rfft_tag<F>(cfft_order, [&](auto d) {
             execute_rfft_forward_post_internal(d, cfft_order, twiddles, in_soa, out_ptr);
         });
@@ -397,7 +397,7 @@ namespace zldsp::fft::common {
      */
     template <class D, typename F, typename InPtr>
     HWY_INLINE void execute_rfft_backward_pre_internal(D d, const size_t cfft_order, const F* HWY_RESTRICT twiddles,
-                                                       InPtr in_ptr, SoAPtr<F> out_soa) {
+                                                       InPtr in_ptr, SoAPtr<F> out_soa) noexcept {
         const size_t cfft_size = 1 << cfft_order;
         static constexpr size_t lanes = hn::MaxLanes(d);
 
@@ -461,7 +461,7 @@ namespace zldsp::fft::common {
      */
     template <typename F, typename InPtr>
     HWY_INLINE void execute_rfft_backward_pre(const size_t cfft_order, const F* HWY_RESTRICT twiddles,
-                                              InPtr in_ptr, SoAPtr<F> out_soa) {
+                                              InPtr in_ptr, SoAPtr<F> out_soa) noexcept {
         dispatch_rfft_tag<F>(cfft_order, [&](auto d) {
             execute_rfft_backward_pre_internal(d, cfft_order, twiddles, in_ptr, out_soa);
         });
@@ -480,8 +480,7 @@ namespace zldsp::fft::common {
     template <class D, typename F>
     HWY_INLINE void execute_rfft_forward_sqr_mag_post_internal(D d, const size_t cfft_order,
                                                                const F* HWY_RESTRICT twiddles,
-                                                               SoAPtr<F> in_soa, F* HWY_RESTRICT out_ptr) {
-
+                                                               SoAPtr<F> in_soa, F* HWY_RESTRICT out_ptr) noexcept {
         const size_t cfft_size = 1 << cfft_order;
         static constexpr size_t lanes = hn::MaxLanes(d);
 
@@ -545,7 +544,7 @@ namespace zldsp::fft::common {
      */
     template <typename F>
     HWY_INLINE void execute_rfft_forward_sqr_mag_post(const size_t cfft_order, const F* HWY_RESTRICT twiddles,
-                                                      SoAPtr<F> in_soa, F* HWY_RESTRICT out_ptr) {
+                                                      SoAPtr<F> in_soa, F* HWY_RESTRICT out_ptr) noexcept {
         dispatch_rfft_tag<F>(cfft_order, [&](auto d) {
             execute_rfft_forward_sqr_mag_post_internal(d, cfft_order, twiddles, in_soa, out_ptr);
         });

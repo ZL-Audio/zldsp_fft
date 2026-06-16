@@ -10,11 +10,11 @@ namespace zldsp::fft::common {
     struct AoSPtr {
         F* HWY_RESTRICT comp;
 
-        [[nodiscard]] HWY_INLINE constexpr AoSPtr shift(const size_t offset) const {
+        [[nodiscard]] HWY_INLINE constexpr AoSPtr shift(const size_t offset) const noexcept {
             return AoSPtr{comp + offset};
         }
 
-        [[nodiscard]] static constexpr size_t get_complex_offset(const size_t offset) {
+        [[nodiscard]] static constexpr size_t get_complex_offset(const size_t offset) noexcept {
             return (offset << 1);
         }
     };
@@ -24,11 +24,11 @@ namespace zldsp::fft::common {
         F* HWY_RESTRICT real;
         F* HWY_RESTRICT imag;
 
-        [[nodiscard]] HWY_INLINE constexpr SoAPtr shift(const size_t offset) const {
+        [[nodiscard]] HWY_INLINE constexpr SoAPtr shift(const size_t offset) const noexcept {
             return SoAPtr{real + offset, imag + offset};
         }
 
-        [[nodiscard]] static constexpr size_t get_complex_offset(const size_t offset) {
+        [[nodiscard]] static constexpr size_t get_complex_offset(const size_t offset) noexcept {
             return offset;
         }
     };
@@ -45,7 +45,7 @@ namespace zldsp::fft::common {
      * @param i
      */
     template <bool is_forward, class D, typename Ptr, typename V>
-    HWY_INLINE void load_complex(D d, Ptr ptr, V& r, V& i) {
+    HWY_INLINE void load_complex(D d, Ptr ptr, V& r, V& i) noexcept {
         using F = hn::TFromD<D>;
         if constexpr (std::is_same_v<Ptr, SoAPtr<F>>) {
             if constexpr (is_forward) {
@@ -76,7 +76,7 @@ namespace zldsp::fft::common {
      * @param i
      */
     template <bool is_forward, class D, typename Ptr, typename V>
-    HWY_INLINE void store_complex(D d, Ptr ptr, const V r, const V i) {
+    HWY_INLINE void store_complex(D d, Ptr ptr, const V r, const V i) noexcept {
         using F = hn::TFromD<D>;
         if constexpr (std::is_same_v<Ptr, SoAPtr<F>>) {
             if constexpr (is_forward) {
@@ -105,7 +105,7 @@ namespace zldsp::fft::common {
      * @param i
      */
     template <bool is_forward, typename F, typename Ptr>
-    HWY_INLINE void load_scalar(Ptr ptr, F& r, F& i) {
+    HWY_INLINE void load_scalar(Ptr ptr, F& r, F& i) noexcept {
         if constexpr (std::is_same_v<Ptr, SoAPtr<F>>) {
             r = is_forward ? ptr.real[0] : ptr.imag[0];
             i = is_forward ? ptr.imag[0] : ptr.real[0];
@@ -125,7 +125,7 @@ namespace zldsp::fft::common {
      * @param i
      */
     template <bool is_forward, typename F, typename Ptr>
-    HWY_INLINE void store_scalar(Ptr ptr, const F r, const F i) {
+    HWY_INLINE void store_scalar(Ptr ptr, const F r, const F i) noexcept {
         if constexpr (std::is_same_v<Ptr, SoAPtr<F>>) {
             ptr.real[0] = is_forward ? r : i;
             ptr.imag[0] = is_forward ? i : r;
@@ -142,7 +142,7 @@ namespace zldsp::fft::common {
      * @return
      */
     template <typename F>
-    static AoSPtr<F> make_aos(std::complex<F>* ptr) {
+    static AoSPtr<F> make_aos(std::complex<F>* ptr) noexcept {
         return AoSPtr<F>{reinterpret_cast<F*>(ptr)};
     }
 
@@ -153,7 +153,7 @@ namespace zldsp::fft::common {
      * @return
      */
     template <typename F>
-    static SoAPtr<F> make_soa(std::array<F*, 2> ptr) {
+    static SoAPtr<F> make_soa(std::array<F*, 2> ptr) noexcept {
         return SoAPtr<F>{ptr[0], ptr[1]};
     }
 }

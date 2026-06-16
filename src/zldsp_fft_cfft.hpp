@@ -35,7 +35,7 @@ namespace zldsp::fft {
          * @param in_buffer
          * @param out_buffer
          */
-        void forward(C* in_buffer, C* out_buffer) {
+        void forward(C* in_buffer, C* out_buffer) noexcept {
             execute<true>(common::make_aos(in_buffer), common::make_aos(out_buffer));
         }
 
@@ -44,7 +44,7 @@ namespace zldsp::fft {
          * @param in_buffer
          * @param out_buffer
          */
-        void backward(C* in_buffer, C* out_buffer) {
+        void backward(C* in_buffer, C* out_buffer) noexcept {
             execute<false>(common::make_aos(in_buffer), common::make_aos(out_buffer));
         }
 
@@ -53,7 +53,7 @@ namespace zldsp::fft {
          * @param in_buffer
          * @param out_buffer
          */
-        void forward(C* in_buffer, std::array<F*, 2> out_buffer) {
+        void forward(C* in_buffer, std::array<F*, 2> out_buffer) noexcept {
             execute<true>(common::make_aos(in_buffer), common::make_soa(out_buffer));
         }
 
@@ -62,7 +62,7 @@ namespace zldsp::fft {
          * @param in_buffer
          * @param out_buffer
          */
-        void backward(C* in_buffer, std::array<F*, 2> out_buffer) {
+        void backward(C* in_buffer, std::array<F*, 2> out_buffer) noexcept {
             execute<false>(common::make_aos(in_buffer), common::make_soa(out_buffer));
         }
 
@@ -71,7 +71,7 @@ namespace zldsp::fft {
          * @param in_buffer
          * @param out_buffer
          */
-        void forward(std::array<F*, 2> in_buffer, C* out_buffer) {
+        void forward(std::array<F*, 2> in_buffer, C* out_buffer) noexcept {
             execute<true>(common::make_soa(in_buffer), common::make_aos(out_buffer));
         }
 
@@ -80,7 +80,7 @@ namespace zldsp::fft {
          * @param in_buffer
          * @param out_buffer
          */
-        void backward(std::array<F*, 2> in_buffer, C* out_buffer) {
+        void backward(std::array<F*, 2> in_buffer, C* out_buffer) noexcept {
             execute<false>(common::make_soa(in_buffer), common::make_aos(out_buffer));
         }
 
@@ -89,7 +89,7 @@ namespace zldsp::fft {
          * @param in_buffer
          * @param out_buffer
          */
-        void forward(std::array<F*, 2> in_buffer, std::array<F*, 2> out_buffer) {
+        void forward(std::array<F*, 2> in_buffer, std::array<F*, 2> out_buffer) noexcept {
             execute<true>(common::make_soa(in_buffer), common::make_soa(out_buffer));
         }
 
@@ -98,7 +98,7 @@ namespace zldsp::fft {
          * @param in_buffer
          * @param out_buffer
          */
-        void backward(std::array<F*, 2> in_buffer, std::array<F*, 2> out_buffer) {
+        void backward(std::array<F*, 2> in_buffer, std::array<F*, 2> out_buffer) noexcept {
             execute<false>(common::make_soa(in_buffer), common::make_soa(out_buffer));
         }
 
@@ -112,7 +112,7 @@ namespace zldsp::fft {
          * @param out_ptr
          */
         template <bool is_forward, typename InPtr, typename OutPtr>
-        void execute(InPtr in_ptr, OutPtr out_ptr) {
+        void execute(InPtr in_ptr, OutPtr out_ptr) noexcept {
             common::execute_cfft<is_forward>(state_, in_ptr, out_ptr);
         }
     };

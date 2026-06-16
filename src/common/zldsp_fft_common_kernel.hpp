@@ -16,7 +16,7 @@ namespace zldsp::fft::common {
      * @param out
      */
     template <bool is_forward, typename F, typename InPtr, typename OutPtr>
-    inline void callback_order_0(InPtr in, OutPtr out) {
+    inline void callback_order_0(InPtr in, OutPtr out) noexcept {
         F r, i;
         load_scalar<is_forward>(in, r, i);
         store_scalar<is_forward>(out, r, i);
@@ -32,7 +32,7 @@ namespace zldsp::fft::common {
      * @param out
      */
     template <bool is_forward, typename F, typename InPtr, typename OutPtr>
-    inline void callback_order_1(InPtr in, OutPtr out) {
+    inline void callback_order_1(InPtr in, OutPtr out) noexcept {
         F r0, i0, r1, i1;
         load_scalar<is_forward>(in, r0, i0);
         load_scalar<is_forward>(in.shift(InPtr::get_complex_offset(1)), r1, i1);
@@ -51,7 +51,7 @@ namespace zldsp::fft::common {
      * @param out
      */
     template <bool is_forward, typename F, typename InPtr, typename OutPtr>
-    inline void callback_order_2(InPtr in, OutPtr out) {
+    inline void callback_order_2(InPtr in, OutPtr out) noexcept {
         F r0, i0, r1, i1, r2, i2, r3, i3;
 
         load_scalar<is_forward>(in, r0, i0);
@@ -80,7 +80,7 @@ namespace zldsp::fft::common {
      * @param out
      */
     template <bool is_forward, typename F, typename InPtr, typename OutPtr>
-    inline void callback_order_3(InPtr in, OutPtr out) {
+    inline void callback_order_3(InPtr in, OutPtr out) noexcept {
         static constexpr F kInvSqrt2 = static_cast<F>(1.0 / std::numbers::sqrt2);
 
         F x0_r, x0_i, x1_r, x1_i, x2_r, x2_i, x3_r, x3_i;
@@ -144,7 +144,7 @@ namespace zldsp::fft::common {
      * @param w_i_base
      */
     template <bool is_forward, typename F, typename InPtr, typename OutPtr>
-    inline void callback_order_4(InPtr in, OutPtr out, const F* w_r_base, const F* w_i_base) {
+    inline void callback_order_4(InPtr in, OutPtr out, const F* w_r_base, const F* w_i_base) noexcept {
         static constexpr hn::ScalableTag<F> d;
         static constexpr size_t lanes = hn::MaxLanes(d);
 
@@ -287,7 +287,7 @@ namespace zldsp::fft::common {
      * @param w_i_base
      */
     template <bool is_forward, typename F, typename InPtr, typename OutPtr>
-    inline void callback_order_5(InPtr in, OutPtr out, const F* w_r_base, const F* w_i_base) {
+    inline void callback_order_5(InPtr in, OutPtr out, const F* w_r_base, const F* w_i_base) noexcept {
         static constexpr hn::ScalableTag<F> d;
         static constexpr size_t lanes = hn::MaxLanes(d);
         static constexpr F kInvSqrt2 = static_cast<F>(1.0 / std::numbers::sqrt2);
