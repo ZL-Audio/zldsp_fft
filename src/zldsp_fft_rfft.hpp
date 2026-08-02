@@ -43,9 +43,11 @@ namespace zldsp::fft {
                     backward_temp_soa_ = common::make_soa<F>({state_.workspace.get(),
                                                               state_.workspace.get() + state_.micro_stride});
                 } else {
-                    rfft_workspace_ = hwy::AllocateAligned<F>(2 * state_.cfft_size);
+                    const size_t rfft_workspace_stride =
+                        state_.cfft_size + common::get_cache_color_padding<F>();
+                    rfft_workspace_ = hwy::AllocateAligned<F>(2 * rfft_workspace_stride);
                     forward_temp_soa_ = common::make_soa<F>({rfft_workspace_.get(),
-                                                             rfft_workspace_.get() + state_.cfft_size});
+                                                             rfft_workspace_.get() + rfft_workspace_stride});
                     backward_temp_soa_ = forward_temp_soa_;
                 }
             }

@@ -144,6 +144,156 @@ namespace zldsp::fft::common {
     }
 
     /**
+     * transpose one SIMD-lane-square tile and store it in column-major order
+     * @tparam D
+     * @tparam F
+     * @param d
+     * @param in
+     * @param in_stride
+     * @param out
+     * @param out_stride
+     */
+    template <class D, typename F>
+    HWY_INLINE void transpose_square_component_to_soa(
+        D d, const F* HWY_RESTRICT in, const size_t in_stride,
+        F* HWY_RESTRICT out, const size_t out_stride) noexcept {
+        static constexpr size_t lanes = hn::MaxLanes(d);
+
+        if constexpr (lanes == 2) {
+            const auto v0 = hn::Load(d, in);
+            const auto v1 = hn::Load(d, in + in_stride);
+            hn::StoreU(hn::InterleaveLower(d, v0, v1), d, out);
+            hn::StoreU(hn::InterleaveUpper(d, v0, v1), d, out + out_stride);
+        } else if constexpr (lanes == 4 && sizeof(F) == 4) {
+            const auto v0 = hn::Load(d, in);
+            const auto v1 = hn::Load(d, in + in_stride);
+            const auto v2 = hn::Load(d, in + 2 * in_stride);
+            const auto v3 = hn::Load(d, in + 3 * in_stride);
+
+            hn::Vec<decltype(d)> o0, o1, o2, o3;
+            transpose4x4(d, v0, v1, v2, v3, o0, o1, o2, o3);
+            hn::StoreU(o0, d, out);
+            hn::StoreU(o1, d, out + out_stride);
+            hn::StoreU(o2, d, out + 2 * out_stride);
+            hn::StoreU(o3, d, out + 3 * out_stride);
+        } else if constexpr (lanes == 4) {
+            using DH = hn::Half<D>;
+            const DH dh;
+            HWY_UNROLL(1)
+            for (size_t col = 0; col < 4; col += 2) {
+                const auto v0 = hn::Load(dh, in + col);
+                const auto v1 = hn::Load(dh, in + in_stride + col);
+                const auto lo0 = hn::InterleaveLower(dh, v0, v1);
+                const auto lo1 = hn::InterleaveUpper(dh, v0, v1);
+
+                const auto v2 = hn::Load(dh, in + 2 * in_stride + col);
+                const auto v3 = hn::Load(dh, in + 3 * in_stride + col);
+                const auto hi0 = hn::InterleaveLower(dh, v2, v3);
+                const auto hi1 = hn::InterleaveUpper(dh, v2, v3);
+
+                hn::StoreU(hn::Combine(d, hi0, lo0), d, out + col * out_stride);
+                hn::StoreU(hn::Combine(d, hi1, lo1), d, out + (col + 1) * out_stride);
+            }
+        } else if constexpr (lanes == 8) {
+            using DH = hn::Half<D>;
+            const DH dh;
+            HWY_UNROLL(1)
+            for (size_t col = 0; col < 8; col += 4) {
+                const auto v0 = hn::Load(dh, in + col);
+                const auto v1 = hn::Load(dh, in + in_stride + col);
+                const auto v2 = hn::Load(dh, in + 2 * in_stride + col);
+                const auto v3 = hn::Load(dh, in + 3 * in_stride + col);
+                hn::Vec<DH> lo0, lo1, lo2, lo3;
+                transpose4x4(dh, v0, v1, v2, v3, lo0, lo1, lo2, lo3);
+
+                const auto v4 = hn::Load(dh, in + 4 * in_stride + col);
+                const auto v5 = hn::Load(dh, in + 5 * in_stride + col);
+                const auto v6 = hn::Load(dh, in + 6 * in_stride + col);
+                const auto v7 = hn::Load(dh, in + 7 * in_stride + col);
+                hn::Vec<DH> hi0, hi1, hi2, hi3;
+                transpose4x4(dh, v4, v5, v6, v7, hi0, hi1, hi2, hi3);
+
+                hn::StoreU(hn::Combine(d, hi0, lo0), d, out + col * out_stride);
+                hn::StoreU(hn::Combine(d, hi1, lo1), d, out + (col + 1) * out_stride);
+                hn::StoreU(hn::Combine(d, hi2, lo2), d, out + (col + 2) * out_stride);
+                hn::StoreU(hn::Combine(d, hi3, lo3), d, out + (col + 3) * out_stride);
+            }
+        }
+    }
+
+    /**
+     * transpose a 4x4 real/imaginary tile and immediately write AoS columns
+     * @tparam is_forward
+     * @tparam D
+     * @tparam F
+     * @tparam OutPtr
+     * @param d
+     * @param in_r
+     * @param in_i
+     * @param in_stride
+     * @param out
+     * @param out_stride
+     */
+    template <bool is_forward, class D, typename F, typename OutPtr>
+    HWY_INLINE void transpose_store_4x4_aos(
+        D d, const F* HWY_RESTRICT in_r, const F* HWY_RESTRICT in_i,
+        const size_t in_stride, OutPtr out, const size_t out_stride) noexcept {
+        const auto rr0 = hn::Load(d, in_r);
+        const auto rr1 = hn::Load(d, in_r + in_stride);
+        const auto rr2 = hn::Load(d, in_r + 2 * in_stride);
+        const auto rr3 = hn::Load(d, in_r + 3 * in_stride);
+        hn::Vec<D> r0, r1, r2, r3;
+        transpose4x4(d, rr0, rr1, rr2, rr3, r0, r1, r2, r3);
+
+        const auto ii0 = hn::Load(d, in_i);
+        const auto ii1 = hn::Load(d, in_i + in_stride);
+        const auto ii2 = hn::Load(d, in_i + 2 * in_stride);
+        const auto ii3 = hn::Load(d, in_i + 3 * in_stride);
+        hn::Vec<D> i0, i1, i2, i3;
+        transpose4x4(d, ii0, ii1, ii2, ii3, i0, i1, i2, i3);
+
+        common::store_complex<is_forward>(d, out, r0, i0);
+        common::store_complex<is_forward>(
+            d, out.shift(OutPtr::get_complex_offset(out_stride)), r1, i1);
+        common::store_complex<is_forward>(
+            d, out.shift(OutPtr::get_complex_offset(2 * out_stride)), r2, i2);
+        common::store_complex<is_forward>(
+            d, out.shift(OutPtr::get_complex_offset(3 * out_stride)), r3, i3);
+    }
+
+    /**
+     * transpose a 2x2 real/imaginary tile and immediately write AoS columns
+     * @tparam is_forward
+     * @tparam D
+     * @tparam F
+     * @tparam OutPtr
+     * @param d
+     * @param in_r
+     * @param in_i
+     * @param in_stride
+     * @param out
+     * @param out_stride
+     */
+    template <bool is_forward, class D, typename F, typename OutPtr>
+    HWY_INLINE void transpose_store_2x2_aos(
+        D d, const F* HWY_RESTRICT in_r, const F* HWY_RESTRICT in_i,
+        const size_t in_stride, OutPtr out, const size_t out_stride) noexcept {
+        const auto rr0 = hn::Load(d, in_r);
+        const auto rr1 = hn::Load(d, in_r + in_stride);
+        const auto r0 = hn::InterleaveLower(d, rr0, rr1);
+        const auto r1 = hn::InterleaveUpper(d, rr0, rr1);
+
+        const auto ii0 = hn::Load(d, in_i);
+        const auto ii1 = hn::Load(d, in_i + in_stride);
+        const auto i0 = hn::InterleaveLower(d, ii0, ii1);
+        const auto i1 = hn::InterleaveUpper(d, ii0, ii1);
+
+        common::store_complex<is_forward>(d, out, r0, i0);
+        common::store_complex<is_forward>(
+            d, out.shift(OutPtr::get_complex_offset(out_stride)), r1, i1);
+    }
+
+    /**
      * execute CFFT
      * @tparam is_forward
      * @tparam F
@@ -177,26 +327,27 @@ namespace zldsp::fft::common {
             common::radix4_first_pass_dif_fused_aosoa<is_forward>(in_ptr, macro_space, state.cfft_size, w_ptr);
             w_ptr += state.macro_twiddles_shift[0];
 
-            for (size_t i = 1; i < state.num_macro_stages; ++i) {
-                size_t width = state.cfft_size >> (2 * i + 2);
-                common::radix4_dif_aosoa_inplace(macro_space, state.cfft_size, width, w_ptr);
-                w_ptr += state.macro_twiddles_shift[i];
+            const size_t remaining_stages = state.num_macro_stages - 1;
+            if (remaining_stages != 0) {
+                const size_t width = state.cfft_size >> 4;
+                common::radix4_dif_aosoa_depth_first(
+                    macro_space, state.cfft_size, width, w_ptr,
+                    state.macro_twiddles_shift.data() + 1,
+                    remaining_stages);
             }
         }
 
         const size_t micro_fft_size = static_cast<size_t>(1) << state.micro_cfft_order;
         const size_t micro_fft_size_padded = micro_fft_size + get_transpose_padding<F>();
 
-        F* HWY_RESTRICT micro_space0 = state.workspace.get() + 4 * state.macro_stride;
+        static constexpr size_t MACRO_TILE_C = HYBRID_TRANSPOSE_TILE_SIZE;
+        static constexpr size_t MACRO_TILE_K = 64;
+        F* HWY_RESTRICT matrix_r = state.workspace.get() + 2 * state.macro_stride;
+        F* HWY_RESTRICT matrix_i = matrix_r + state.transpose_tile_stride;
+        F* HWY_RESTRICT micro_space0 = matrix_i + state.transpose_tile_stride;
         F* HWY_RESTRICT micro_space1 = micro_space0 + 2 * state.micro_stride;
 
-        F* HWY_RESTRICT matrix_r = state.workspace.get() + 2 * state.macro_stride;
-        F* HWY_RESTRICT matrix_i = matrix_r + state.micro_segment_size * micro_fft_size_padded;
-        std::complex<F>* aos_matrix = reinterpret_cast<std::complex<F>*>(matrix_r);
-
         // execute micro Stockham DIT CFFT
-        static constexpr size_t MACRO_TILE_C = 64;
-        static constexpr size_t MACRO_TILE_K = 64;
         for (size_t c_macro = 0; c_macro < state.micro_segment_size; c_macro += MACRO_TILE_C) {
             const size_t c_max = std::min<size_t>(c_macro + MACRO_TILE_C, state.micro_segment_size);
             const size_t c_chunk_size = c_max - c_macro;
@@ -233,39 +384,101 @@ namespace zldsp::fft::common {
                     w_ptr += state.micro_twiddles_shift[i];
                     std::swap(current_in, current_out);
                 }
-                if constexpr (is_soa) {
-                    SoAPtr<F> out_soa_ptr = make_soa<F>({
-                        matrix_r + (c_macro + c_offset) * micro_fft_size_padded,
-                        matrix_i + (c_macro + c_offset) * micro_fft_size_padded
-                    });
-                    common::radix4_last_pass_fused_aosoa<true>(current_in, out_soa_ptr, micro_fft_size, width, w_ptr);
-                } else {
-                    AoSPtr<F> out_aos = make_aos<F>(aos_matrix + (c_macro + c_offset) * micro_fft_size_padded);
-                    common::radix4_last_pass_fused_aosoa<true>(current_in, out_aos, micro_fft_size, width, w_ptr);
-                }
+                SoAPtr<F> out_soa_ptr = make_soa<F>({
+                    matrix_r + c_offset * micro_fft_size_padded,
+                    matrix_i + c_offset * micro_fft_size_padded
+                });
+                common::radix4_last_pass_fused_aosoa<true>(
+                    current_in, out_soa_ptr, micro_fft_size, width, w_ptr);
             }
-            // perform local matrix transpose
+            // execute SIMD-tiled local matrix transpose
+            HWY_ASSUME(c_chunk_size >= lanes);
+            HWY_ASSUME((c_chunk_size % lanes) == 0);
             for (size_t k_macro = 0; k_macro < micro_fft_size; k_macro += MACRO_TILE_K) {
                 const size_t k_max = std::min<size_t>(k_macro + MACRO_TILE_K, micro_fft_size);
-                for (size_t k = k_macro; k < k_max; ++k) {
-                    const size_t out_shift = k * state.micro_segment_size + c_macro;
+                HWY_ASSUME((k_max - k_macro) >= lanes);
+                HWY_ASSUME(((k_max - k_macro) % lanes) == 0);
+                for (size_t k = k_macro; k < k_max; k += lanes) {
                     for (size_t c = 0; c < c_chunk_size; c += lanes) {
-                        alignas(HWY_ALIGNMENT) F tmp_r[32];
-                        alignas(HWY_ALIGNMENT) F tmp_i[32];
-                        const size_t vec_len = std::min<size_t>(lanes, c_chunk_size - c);
-                        for (size_t i = 0; i < vec_len; ++i) {
-                            if constexpr (is_soa) {
-                                tmp_r[i] = matrix_r[(c_macro + c + i) * micro_fft_size_padded + k];
-                                tmp_i[i] = matrix_i[(c_macro + c + i) * micro_fft_size_padded + k];
-                            } else {
-                                tmp_r[i] = aos_matrix[(c_macro + c + i) * micro_fft_size_padded + k].real();
-                                tmp_i[i] = aos_matrix[(c_macro + c + i) * micro_fft_size_padded + k].imag();
+                        const size_t matrix_shift = c * micro_fft_size_padded + k;
+                        const size_t out_shift = k * state.micro_segment_size + c_macro + c;
+
+                        if constexpr (is_soa && (lanes == 2 || lanes == 4 || lanes == 8)) {
+                            F* HWY_RESTRICT out_r = is_forward ? out_ptr.real : out_ptr.imag;
+                            F* HWY_RESTRICT out_i = is_forward ? out_ptr.imag : out_ptr.real;
+                            common::transpose_square_component_to_soa(
+                                d, matrix_r + matrix_shift, micro_fft_size_padded,
+                                out_r + out_shift, state.micro_segment_size);
+                            common::transpose_square_component_to_soa(
+                                d, matrix_i + matrix_shift, micro_fft_size_padded,
+                                out_i + out_shift, state.micro_segment_size);
+                        } else if constexpr (!is_soa && lanes == 8) {
+                            using DH = hn::Half<decltype(d)>;
+                            const DH dh;
+                            HWY_UNROLL(1)
+                            for (size_t col = 0; col < 8; col += 4) {
+                                const size_t col_out_shift =
+                                    out_shift + col * state.micro_segment_size;
+                                common::transpose_store_4x4_aos<is_forward>(
+                                    dh, matrix_r + matrix_shift + col,
+                                    matrix_i + matrix_shift + col, micro_fft_size_padded,
+                                    out_ptr.shift(OutPtr::get_complex_offset(col_out_shift)),
+                                    state.micro_segment_size);
+                                common::transpose_store_4x4_aos<is_forward>(
+                                    dh, matrix_r + matrix_shift + col + 4 * micro_fft_size_padded,
+                                    matrix_i + matrix_shift + col + 4 * micro_fft_size_padded,
+                                    micro_fft_size_padded,
+                                    out_ptr.shift(OutPtr::get_complex_offset(col_out_shift + 4)),
+                                    state.micro_segment_size);
+                            }
+                        } else if constexpr (!is_soa && lanes == 4 && sizeof(F) == 4) {
+                            common::transpose_store_4x4_aos<is_forward>(
+                                d, matrix_r + matrix_shift, matrix_i + matrix_shift,
+                                micro_fft_size_padded,
+                                out_ptr.shift(OutPtr::get_complex_offset(out_shift)),
+                                state.micro_segment_size);
+                        } else if constexpr (!is_soa && lanes == 4) {
+                            using DH = hn::Half<decltype(d)>;
+                            const DH dh;
+                            HWY_UNROLL(1)
+                            for (size_t col = 0; col < 4; col += 2) {
+                                const size_t col_out_shift =
+                                    out_shift + col * state.micro_segment_size;
+                                common::transpose_store_2x2_aos<is_forward>(
+                                    dh, matrix_r + matrix_shift + col,
+                                    matrix_i + matrix_shift + col, micro_fft_size_padded,
+                                    out_ptr.shift(OutPtr::get_complex_offset(col_out_shift)),
+                                    state.micro_segment_size);
+                                common::transpose_store_2x2_aos<is_forward>(
+                                    dh, matrix_r + matrix_shift + col + 2 * micro_fft_size_padded,
+                                    matrix_i + matrix_shift + col + 2 * micro_fft_size_padded,
+                                    micro_fft_size_padded,
+                                    out_ptr.shift(OutPtr::get_complex_offset(col_out_shift + 2)),
+                                    state.micro_segment_size);
+                            }
+                        } else if constexpr (!is_soa && lanes == 2) {
+                            common::transpose_store_2x2_aos<is_forward>(
+                                d, matrix_r + matrix_shift, matrix_i + matrix_shift,
+                                micro_fft_size_padded,
+                                out_ptr.shift(OutPtr::get_complex_offset(out_shift)),
+                                state.micro_segment_size);
+                        } else {
+                            alignas(HWY_ALIGNMENT) F tmp_r[32];
+                            alignas(HWY_ALIGNMENT) F tmp_i[32];
+                            for (size_t kk = 0; kk < lanes; ++kk) {
+                                for (size_t i = 0; i < lanes; ++i) {
+                                    tmp_r[i] = matrix_r[
+                                        (c + i) * micro_fft_size_padded + k + kk];
+                                    tmp_i[i] = matrix_i[
+                                        (c + i) * micro_fft_size_padded + k + kk];
+                                }
+                                const auto vr = hn::Load(d, tmp_r);
+                                const auto vi = hn::Load(d, tmp_i);
+                                common::store_complex<is_forward>(
+                                    d, out_ptr.shift(OutPtr::get_complex_offset(
+                                           out_shift + kk * state.micro_segment_size)), vr, vi);
                             }
                         }
-                        auto vr = hn::Load(d, tmp_r);
-                        auto vi = hn::Load(d, tmp_i);
-                        common::store_complex<is_forward>(d, out_ptr.shift(OutPtr::get_complex_offset(out_shift + c)),
-                                                          vr, vi);
                     }
                 }
             }

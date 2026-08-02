@@ -749,7 +749,94 @@ namespace zldsp::fft::common {
     }
 
     /**
-     * perform a Cooley-Tukey DIF radix-4 pass when width >= 8
+     * perform one Cooley-Tukey DIF radix-4 block when width >= 8
+     * @tparam F
+     * @param workspace
+     * @param width
+     * @param w_ptr
+     */
+    template <typename F>
+    HWY_INLINE void radix4_dif_aosoa_block(
+        F* HWY_RESTRICT workspace, const size_t width,
+        const F* HWY_RESTRICT w_ptr) noexcept {
+        static constexpr hn::ScalableTag<F> d;
+        static constexpr size_t lanes = hn::MaxLanes(d);
+
+        const size_t offset1 = width << 1;
+        const size_t offset2 = width << 2;
+        const size_t offset3 = offset1 + offset2;
+
+        HWY_ASSUME(width >= lanes);
+        HWY_ASSUME((width % lanes) == 0);
+        for (size_t i = 0; i < width; i += lanes) {
+            const F* HWY_RESTRICT w_shift = w_ptr + i * 6;
+            F* HWY_RESTRICT ptr_shift = workspace + (i << 1);
+
+            const auto r0 = hn::Load(d, ptr_shift);
+            const auto i0 = hn::Load(d, ptr_shift + lanes);
+            const auto r2 = hn::Load(d, ptr_shift + offset2);
+            const auto i2 = hn::Load(d, ptr_shift + offset2 + lanes);
+
+            const auto t0_r = hn::Add(r0, r2);
+            const auto t0_i = hn::Add(i0, i2);
+            const auto t1_r = hn::Sub(r0, r2);
+            const auto t1_i = hn::Sub(i0, i2);
+
+            const auto r1 = hn::Load(d, ptr_shift + offset1);
+            const auto i1 = hn::Load(d, ptr_shift + offset1 + lanes);
+            const auto r3 = hn::Load(d, ptr_shift + offset3);
+            const auto i3 = hn::Load(d, ptr_shift + offset3 + lanes);
+
+            const auto t2_r = hn::Add(r1, r3);
+            const auto t2_i = hn::Add(i1, i3);
+            const auto t3_r = hn::Sub(r1, r3);
+            const auto t3_i = hn::Sub(i1, i3);
+
+            {
+                const auto y0_r = hn::Add(t0_r, t2_r);
+                const auto y0_i = hn::Add(t0_i, t2_i);
+
+                hn::Store(y0_r, d, ptr_shift);
+                hn::Store(y0_i, d, ptr_shift + lanes);
+            }
+            {
+                const auto y2_r = hn::Sub(t0_r, t2_r);
+                const auto y2_i = hn::Sub(t0_i, t2_i);
+                const auto w2_r = hn::Load(d, w_shift + lanes * 2);
+                const auto w2_i = hn::Load(d, w_shift + lanes * 3);
+                const auto out2_r = hn::NegMulAdd(y2_i, w2_i, hn::Mul(y2_r, w2_r));
+                const auto out2_i = hn::MulAdd(y2_i, w2_r, hn::Mul(y2_r, w2_i));
+
+                hn::Store(out2_r, d, ptr_shift + offset2);
+                hn::Store(out2_i, d, ptr_shift + offset2 + lanes);
+            }
+            {
+                const auto y1_r = hn::Add(t1_r, t3_i);
+                const auto y1_i = hn::Sub(t1_i, t3_r);
+                const auto w1_r = hn::Load(d, w_shift);
+                const auto w1_i = hn::Load(d, w_shift + lanes);
+                const auto out1_r = hn::NegMulAdd(y1_i, w1_i, hn::Mul(y1_r, w1_r));
+                const auto out1_i = hn::MulAdd(y1_i, w1_r, hn::Mul(y1_r, w1_i));
+
+                hn::Store(out1_r, d, ptr_shift + offset1);
+                hn::Store(out1_i, d, ptr_shift + offset1 + lanes);
+            }
+            {
+                const auto y3_r = hn::Sub(t1_r, t3_i);
+                const auto y3_i = hn::Add(t1_i, t3_r);
+                const auto w3_r = hn::Load(d, w_shift + lanes * 4);
+                const auto w3_i = hn::Load(d, w_shift + lanes * 5);
+                const auto out3_r = hn::NegMulAdd(y3_i, w3_i, hn::Mul(y3_r, w3_r));
+                const auto out3_i = hn::MulAdd(y3_i, w3_r, hn::Mul(y3_r, w3_i));
+
+                hn::Store(out3_r, d, ptr_shift + offset3);
+                hn::Store(out3_i, d, ptr_shift + offset3 + lanes);
+            }
+        }
+    }
+
+    /**
+     * perform a complete Cooley-Tukey DIF radix-4 stage
      * @tparam F
      * @param workspace
      * @param n
@@ -757,86 +844,52 @@ namespace zldsp::fft::common {
      * @param w_ptr
      */
     template <typename F>
-    inline void radix4_dif_aosoa_inplace(F* HWY_RESTRICT workspace,
-                                         const size_t n,
-                                         const size_t width, const F* HWY_RESTRICT w_ptr) noexcept {
-        static constexpr hn::ScalableTag<F> d;
-        static constexpr size_t lanes = hn::MaxLanes(d);
+    inline void radix4_dif_aosoa_inplace(
+        F* HWY_RESTRICT workspace, const size_t n, const size_t width,
+        const F* HWY_RESTRICT w_ptr) noexcept {
+        const size_t sub_n = width << 2;
+        for (size_t block = 0; block < n; block += sub_n) {
+            radix4_dif_aosoa_block(
+                workspace + (block << 1), width, w_ptr);
+        }
+    }
+
+    /**
+     * execute independent macro DIF blocks depth-first, consuming descendants
+     * before sibling blocks displace their parent's cache lines
+     * @tparam F
+     * @param workspace
+     * @param n
+     * @param width
+     * @param w_ptr
+     * @param twiddles_shift
+     * @param num_stages
+     */
+    template <typename F>
+    inline void radix4_dif_aosoa_depth_first(
+        F* HWY_RESTRICT workspace, const size_t n, const size_t width,
+        const F* HWY_RESTRICT w_ptr,
+        const size_t* HWY_RESTRICT twiddles_shift,
+        const size_t num_stages) noexcept {
+        if (num_stages == 1) {
+            radix4_dif_aosoa_inplace(workspace, n, width, w_ptr);
+            return;
+        }
 
         const size_t sub_n = width << 2;
-
-        const size_t offset1 = width << 1;
-        const size_t offset2 = width << 2;
-        const size_t offset3 = offset1 + offset2;
-
+        const size_t next_width = width >> 2;
+        const F* HWY_RESTRICT next_w_ptr = w_ptr + twiddles_shift[0];
         for (size_t block = 0; block < n; block += sub_n) {
             F* HWY_RESTRICT ptr_block = workspace + (block << 1);
-            HWY_ASSUME(width >= lanes);
-            HWY_ASSUME((width % lanes) == 0);
-            for (size_t i = 0; i < width; i += lanes) {
-                const F* HWY_RESTRICT w_shift = w_ptr + i * 6;
-                F* HWY_RESTRICT ptr_shift = ptr_block + (i << 1);
+            radix4_dif_aosoa_block(ptr_block, width, w_ptr);
 
-                const auto r0 = hn::Load(d, ptr_shift);
-                const auto i0 = hn::Load(d, ptr_shift + lanes);
-                const auto r2 = hn::Load(d, ptr_shift + offset2);
-                const auto i2 = hn::Load(d, ptr_shift + offset2 + lanes);
-
-                const auto t0_r = hn::Add(r0, r2);
-                const auto t0_i = hn::Add(i0, i2);
-                const auto t1_r = hn::Sub(r0, r2);
-                const auto t1_i = hn::Sub(i0, i2);
-
-                const auto r1 = hn::Load(d, ptr_shift + offset1);
-                const auto i1 = hn::Load(d, ptr_shift + offset1 + lanes);
-                const auto r3 = hn::Load(d, ptr_shift + offset3);
-                const auto i3 = hn::Load(d, ptr_shift + offset3 + lanes);
-
-                const auto t2_r = hn::Add(r1, r3);
-                const auto t2_i = hn::Add(i1, i3);
-                const auto t3_r = hn::Sub(r1, r3);
-                const auto t3_i = hn::Sub(i1, i3);
-
-                {
-                    const auto y0_r = hn::Add(t0_r, t2_r);
-                    const auto y0_i = hn::Add(t0_i, t2_i);
-
-                    hn::Store(y0_r, d, ptr_shift);
-                    hn::Store(y0_i, d, ptr_shift + lanes);
-                }
-                {
-                    const auto y2_r = hn::Sub(t0_r, t2_r);
-                    const auto y2_i = hn::Sub(t0_i, t2_i);
-                    const auto w2_r = hn::Load(d, w_shift + lanes * 2);
-                    const auto w2_i = hn::Load(d, w_shift + lanes * 3);
-                    const auto out2_r = hn::NegMulAdd(y2_i, w2_i, hn::Mul(y2_r, w2_r));
-                    const auto out2_i = hn::MulAdd(y2_i, w2_r, hn::Mul(y2_r, w2_i));
-
-                    hn::Store(out2_r, d, ptr_shift + offset2);
-                    hn::Store(out2_i, d, ptr_shift + offset2 + lanes);
-                }
-                {
-                    const auto y1_r = hn::Add(t1_r, t3_i);
-                    const auto y1_i = hn::Sub(t1_i, t3_r);
-                    const auto w1_r = hn::Load(d, w_shift);
-                    const auto w1_i = hn::Load(d, w_shift + lanes);
-                    const auto out1_r = hn::NegMulAdd(y1_i, w1_i, hn::Mul(y1_r, w1_r));
-                    const auto out1_i = hn::MulAdd(y1_i, w1_r, hn::Mul(y1_r, w1_i));
-
-                    hn::Store(out1_r, d, ptr_shift + offset1);
-                    hn::Store(out1_i, d, ptr_shift + offset1 + lanes);
-                }
-                {
-                    const auto y3_r = hn::Sub(t1_r, t3_i);
-                    const auto y3_i = hn::Add(t1_i, t3_r);
-                    const auto w3_r = hn::Load(d, w_shift + lanes * 4);
-                    const auto w3_i = hn::Load(d, w_shift + lanes * 5);
-                    const auto out3_r = hn::NegMulAdd(y3_i, w3_i, hn::Mul(y3_r, w3_r));
-                    const auto out3_i = hn::MulAdd(y3_i, w3_r, hn::Mul(y3_r, w3_i));
-
-                    hn::Store(out3_r, d, ptr_shift + offset3);
-                    hn::Store(out3_i, d, ptr_shift + offset3 + lanes);
-                }
+            if (num_stages == 2) {
+                radix4_dif_aosoa_inplace(
+                    ptr_block, sub_n, next_width, next_w_ptr);
+            } else {
+                radix4_dif_aosoa_depth_first(
+                    ptr_block, sub_n, next_width, next_w_ptr,
+                    twiddles_shift + 1, num_stages - 1);
             }
         }
     }
