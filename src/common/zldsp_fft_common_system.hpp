@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <bit>
 #include <utility>
+#include <vector>
 #if defined(__APPLE__)
 #include <sys/types.h>
 #include <sys/sysctl.h>
@@ -17,6 +18,7 @@
 
 namespace zldsp::fft::common {
     /**
+     * get data-cache line size
      * @return data-cache line size in bytes
      */
     inline size_t get_cache_line_size() {
@@ -50,8 +52,8 @@ namespace zldsp::fft::common {
     }
 
     /**
-     *
-     * @return L1 data cache size
+     * get L1 data-cache size
+     * @return size in bytes
      */
     inline size_t get_l1d_cache_size() {
         size_t l1d_size = 32768;
@@ -86,8 +88,8 @@ namespace zldsp::fft::common {
     }
 
     /**
-     *
-     * @return L2 cache size
+     * get L2 cache size
+     * @return size in bytes
      */
     inline size_t get_l2_cache_size() {
         size_t l2_size = 262144;
@@ -122,26 +124,27 @@ namespace zldsp::fft::common {
     }
 
     /**
-     * get switching order at runtime
+     * get cache-dependent order thresholds for the hybrid algorithm
      * @tparam F
      * @return {maximum order that can stay in L1 data cache, heuristic switching order for hybrid algorithm}
      */
     template <typename F>
-    std::pair<size_t, size_t> get_switch_order() {
-        const size_t l1d = get_l1d_cache_size();
-        const size_t max_l1_elements = l1d / (8 * sizeof(F));
+    std::pair<size_t, size_t> get_hybrid_order_thresholds() {
+        const size_t l1_size = get_l1d_cache_size();
+        const size_t max_l1_elements = l1_size / (8 * sizeof(F));
         const size_t max_l1_order = (max_l1_elements == 0)
             ? static_cast<size_t>(0)
             : static_cast<size_t>(std::bit_width(max_l1_elements) - 1);
 
-        const size_t l2d = get_l2_cache_size();
-        const size_t max_l2_elements = l2d / (12 * sizeof(F));
+        const size_t l2_size = get_l2_cache_size();
+        const size_t max_l2_elements = l2_size / (12 * sizeof(F));
         const size_t max_l2_order = (max_l2_elements == 0)
             ? static_cast<size_t>(0)
             : static_cast<size_t>(std::bit_width(max_l2_elements) - 1);
 
-        const size_t switch_order = std::max<size_t>(max_l1_order + 4, max_l2_order);
+        const size_t hybrid_switch_order =
+            std::max<size_t>(max_l1_order + 4, max_l2_order);
 
-        return {max_l1_order, switch_order};
+        return {max_l1_order, hybrid_switch_order};
     }
 }

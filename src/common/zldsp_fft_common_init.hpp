@@ -31,25 +31,25 @@ namespace zldsp::fft::common {
         size_t micro_cfft_order = 0;
         std::vector<StageType> micro_stages;
         hwy::AlignedFreeUniquePtr<F[]> micro_twiddles;
-        std::vector<size_t> micro_twiddles_shift;
+        std::vector<size_t> micro_twiddle_strides;
         size_t micro_stride = 0;
 
         size_t num_macro_stages = 0;
         hwy::AlignedFreeUniquePtr<F[]> macro_twiddles;
-        std::vector<size_t> macro_twiddles_shift;
+        std::vector<size_t> macro_twiddle_strides;
         size_t macro_stride = 0;
 
-        size_t micro_segment_size = 0;
+        size_t num_micro_ffts = 0;
         size_t transpose_tile_stride = 0;
-        std::vector<size_t> digit_rev_4;
+        std::vector<size_t> radix4_digit_reversal;
     };
 
-    inline constexpr size_t HYBRID_TRANSPOSE_TILE_SIZE = 64;
+    inline constexpr size_t kHybridTransposeTileRows = 64;
 
     /**
-     * get cache-line colour padding while retaining Highway alignment
+     * get cache-line color padding while retaining Highway alignment
      * @tparam F
-     * @return
+     * @return padding in scalar elements
      */
     template <typename F>
     inline size_t get_cache_color_padding() {
@@ -60,10 +60,10 @@ namespace zldsp::fft::common {
     }
 
     /**
-     * get padded size of a given CFFT size
+     * get padded workspace stride for one CFFT component
      * @tparam F
      * @param cfft_size
-     * @return
+     * @return stride in scalar elements
      */
     template <typename F>
     inline constexpr size_t get_cfft_stride(const size_t cfft_size) {
@@ -71,9 +71,9 @@ namespace zldsp::fft::common {
     }
 
     /**
-     * get padded size of matrix transpose
+     * get padding for each terminal-transpose row
      * @tparam F
-     * @return
+     * @return padding in scalar elements
      */
     template <typename F>
     inline constexpr size_t get_transpose_padding() {
@@ -112,37 +112,37 @@ namespace zldsp::fft::common {
     }
 
     /**
-     * generates twiddles for order > 5
+     * generate Stockham stage twiddles for order > 5
      * @tparam F
      * @param stages
-     * @param twiddles_shift
+     * @param twiddle_strides
      * @param twiddles
      */
     template <typename F>
-    inline void generate_general_twiddles(std::vector<StageType>& stages,
-                                          std::vector<size_t>& twiddles_shift,
-                                          hwy::AlignedFreeUniquePtr<F[]>& twiddles) {
+    inline void generate_stockham_twiddles(std::vector<StageType>& stages,
+                                           std::vector<size_t>& twiddle_strides,
+                                           hwy::AlignedFreeUniquePtr<F[]>& twiddles) {
         static constexpr size_t lanes = hn::MaxLanes(hn::ScalableTag<F>());
         static constexpr size_t width4_vec = std::max<size_t>(4, lanes);
-        // calculate twiddle shift for each stage
+        // calculate twiddle stride for each stage
         {
             size_t width = (stages[0] == StageType::kRadix4FirstPass) ? 4 : 8;
             for (size_t i = 1; i < stages.size(); ++i) {
                 const auto stage = stages[i];
                 if (stage == StageType::kRadix4Width4) {
-                    twiddles_shift[i] = 6 * width4_vec;
+                    twiddle_strides[i] = 6 * width4_vec;
                     width = width << 2;
                 } else if (stage == StageType::kRadix4 || stage == StageType::kRadix4LastPass) {
                     const size_t num_blocks = std::max<size_t>(1, width / lanes);
-                    twiddles_shift[i] = num_blocks * 6 * lanes;
+                    twiddle_strides[i] = num_blocks * 6 * lanes;
                     width = width << 2;
                 }
             }
         }
-        // allocate twiddle
+        // allocate twiddle storage
         {
             const auto num_twiddles =
-                std::accumulate(twiddles_shift.begin(), twiddles_shift.end(), static_cast<size_t>(0));
+                std::accumulate(twiddle_strides.begin(), twiddle_strides.end(), static_cast<size_t>(0));
             twiddles = hwy::AllocateAligned<F>(num_twiddles);
         }
         // calculate twiddle values
@@ -162,7 +162,7 @@ namespace zldsp::fft::common {
                             twiddles[offset + (2 * m + 1) * width4_vec + l] = static_cast<F>(math::sinpi(a));
                         }
                     }
-                    offset += twiddles_shift[i];
+                    offset += twiddle_strides[i];
                     width = width << 2;
                 } else if (stage == StageType::kRadix4 || stage == StageType::kRadix4LastPass) {
                     const size_t num_blocks = std::max<size_t>(1, width / lanes);
@@ -187,11 +187,11 @@ namespace zldsp::fft::common {
     }
 
     /**
-     * init twiddles for Stockham DIT CFFT
+     * initialize twiddles for Stockham DIT CFFT
      * @tparam F
      * @param order
      * @param stages
-     * @param twiddles_shift
+     * @param twiddle_strides
      * @param twiddles
      * @return stride size
      */
@@ -199,7 +199,7 @@ namespace zldsp::fft::common {
     size_t init_stockham_cfft_state(
         const size_t order,
         std::vector<StageType>& stages,
-        std::vector<size_t>& twiddles_shift,
+        std::vector<size_t>& twiddle_strides,
         hwy::AlignedFreeUniquePtr<F[]>& twiddles) {
         if (order < 4) {
             return 0;
@@ -207,8 +207,8 @@ namespace zldsp::fft::common {
             common::generate_order_4_5_twiddles(order, twiddles);
             return 0;
         } else {
-            const auto mod_result = order % 2;
-            if (mod_result == 1) {
+            const bool is_odd_order = order % 2 != 0;
+            if (is_odd_order) {
                 stages.emplace_back(StageType::kRadix8FirstPass);
                 for (size_t i = 3; i < order - 2; i += 2) {
                     stages.emplace_back(StageType::kRadix4);
@@ -222,21 +222,21 @@ namespace zldsp::fft::common {
             }
             stages.emplace_back(StageType::kRadix4LastPass);
 
-            twiddles_shift.resize(stages.size());
-            twiddles_shift[0] = 0;
+            twiddle_strides.resize(stages.size());
+            twiddle_strides[0] = 0;
 
-            common::generate_general_twiddles(stages, twiddles_shift, twiddles);
+            common::generate_stockham_twiddles(stages, twiddle_strides, twiddles);
 
             return get_cfft_stride<F>(static_cast<size_t>(1) << order);
         }
     }
 
     /**
-     * init twiddles for macro Cooley-Tukey DIF CFFT
+     * initialize twiddles for macro Cooley-Tukey DIF CFFT
      * @tparam F
      * @param order
      * @param num_stages
-     * @param twiddles_shift
+     * @param twiddle_strides
      * @param twiddles
      * @return stride size
      */
@@ -244,24 +244,24 @@ namespace zldsp::fft::common {
     size_t init_cooley_tukey_cfft_state(
         const size_t order,
         const size_t num_stages,
-        std::vector<size_t>& twiddles_shift,
+        std::vector<size_t>& twiddle_strides,
         hwy::AlignedFreeUniquePtr<F[]>& twiddles) {
         static constexpr size_t lanes = hn::MaxLanes(hn::ScalableTag<F>());
         const size_t n = static_cast<size_t>(1) << order;
-        twiddles_shift.resize(num_stages);
-        // calculate twiddle shift for each stage
+        twiddle_strides.resize(num_stages);
+        // calculate twiddle stride for each stage
         {
             for (size_t i = 0; i < num_stages; ++i) {
                 const size_t sub_n = n >> (2 * i);
                 const size_t width = sub_n >> 2;
                 const size_t num_blocks = std::max<size_t>(1, width / lanes);
-                twiddles_shift[i] = num_blocks * 6 * lanes;
+                twiddle_strides[i] = num_blocks * 6 * lanes;
             }
         }
-        // allocate twiddle
+        // allocate twiddle storage
         {
             const auto num_twiddles =
-                std::accumulate(twiddles_shift.begin(), twiddles_shift.end(), static_cast<size_t>(0));
+                std::accumulate(twiddle_strides.begin(), twiddle_strides.end(), static_cast<size_t>(0));
             twiddles = hwy::AllocateAligned<F>(num_twiddles);
         }
         // calculate twiddle values
@@ -291,16 +291,17 @@ namespace zldsp::fft::common {
     }
 
     /**
-     * init bit-reversal table
-     * @param micro_segment_size
+     * initialize radix-4 digit-reversal table
+     * @param num_micro_ffts
      * @param num_macro_stages
-     * @param digit_rev_4
+     * @param radix4_digit_reversal
      */
-    inline void init_bit_reversal_table(const size_t micro_segment_size,
-                                        const size_t num_macro_stages,
-                                        std::vector<size_t>& digit_rev_4) {
-        digit_rev_4.resize(micro_segment_size);
-        for (size_t i = 0; i < micro_segment_size; ++i) {
+    inline void init_radix4_digit_reversal(
+        const size_t num_micro_ffts,
+        const size_t num_macro_stages,
+        std::vector<size_t>& radix4_digit_reversal) {
+        radix4_digit_reversal.resize(num_micro_ffts);
+        for (size_t i = 0; i < num_micro_ffts; ++i) {
             size_t rev = 0;
             size_t temp = i;
             for (size_t d_idx = 0; d_idx < num_macro_stages; ++d_idx) {
@@ -308,25 +309,26 @@ namespace zldsp::fft::common {
                 temp >>= 2;
                 rev = (rev << 2) | digit;
             }
-            digit_rev_4[i] = rev;
+            radix4_digit_reversal[i] = rev;
         }
     }
 
     /**
-     * init twiddles and working-space for CFFT
+     * initialize twiddles and workspace for CFFT
      * @tparam F
      * @param cfft_order
      * @param state
      */
     template <typename F>
     inline void init_cfft_state(const size_t cfft_order, CFFTState<F>& state) {
-        auto [max_l1_order, switch_order] = common::get_switch_order<F>();
-        if (cfft_order < switch_order) {
+        auto [max_l1_order, hybrid_switch_order] =
+            common::get_hybrid_order_thresholds<F>();
+        if (cfft_order < hybrid_switch_order) {
             state.micro_cfft_order = cfft_order;
             state.num_macro_stages = 0;
             state.micro_stride = common::init_stockham_cfft_state(
                 state.micro_cfft_order, state.micro_stages,
-                state.micro_twiddles_shift, state.micro_twiddles);
+                state.micro_twiddle_strides, state.micro_twiddles);
             if (state.micro_stride > 0) {
                 state.workspace = hwy::AllocateAligned<F>(4 * state.micro_stride);
             }
@@ -340,16 +342,17 @@ namespace zldsp::fft::common {
 
             state.micro_stride = common::init_stockham_cfft_state(
                 state.micro_cfft_order, state.micro_stages,
-                state.micro_twiddles_shift, state.micro_twiddles);
+                state.micro_twiddle_strides, state.micro_twiddles);
 
             state.macro_stride = common::init_cooley_tukey_cfft_state(
                 state.cfft_order, state.num_macro_stages,
-                state.macro_twiddles_shift, state.macro_twiddles);
+                state.macro_twiddle_strides, state.macro_twiddles);
 
-            state.micro_segment_size = static_cast<size_t>(1) << (state.cfft_order - state.micro_cfft_order);
+            state.num_micro_ffts = static_cast<size_t>(1) <<
+                (state.cfft_order - state.micro_cfft_order);
             const size_t micro_fft_size = static_cast<size_t>(1) << state.micro_cfft_order;
             const size_t matrix_tile_rows =
-                std::min<size_t>(HYBRID_TRANSPOSE_TILE_SIZE, state.micro_segment_size);
+                std::min<size_t>(kHybridTransposeTileRows, state.num_micro_ffts);
             state.transpose_tile_stride = matrix_tile_rows *
                 (micro_fft_size + get_transpose_padding<F>()) +
                 get_cache_color_padding<F>();
@@ -360,7 +363,9 @@ namespace zldsp::fft::common {
                 4 * state.micro_stride;
             state.workspace = hwy::AllocateAligned<F>(workspace_size);
 
-            common::init_bit_reversal_table(state.micro_segment_size, state.num_macro_stages, state.digit_rev_4);
+            common::init_radix4_digit_reversal(
+                state.num_micro_ffts, state.num_macro_stages,
+                state.radix4_digit_reversal);
         }
     }
 

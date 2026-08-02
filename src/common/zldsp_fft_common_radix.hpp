@@ -157,7 +157,7 @@ namespace zldsp::fft::common {
     }
 
     /**
-     * performs a Stockham DIT radix-4 first pass and convert data from AoS/SoA to AoSoA
+     * perform a Stockham DIT radix-4 first pass and convert data from AoS/SoA to AoSoA
      * @tparam is_forward
      * @tparam F
      * @tparam Ptr
@@ -463,7 +463,7 @@ namespace zldsp::fft::common {
     }
 
     /**
-     * performs a Stockham DIT radix-8 first pass and convert data from AoS/SoA to AoSoA
+     * perform a Stockham DIT radix-8 first pass and convert data from AoS/SoA to AoSoA
      * @tparam is_forward
      * @tparam F
      * @tparam Ptr
@@ -655,7 +655,7 @@ namespace zldsp::fft::common {
     }
 
     /**
-     * performs a Cooley-Tukey DIF radix-4 first pass and converts data from AoS/SoA to AoSoA
+     * perform a Cooley-Tukey DIF radix-4 first pass and convert data from AoS/SoA to AoSoA
      * @tparam is_forward
      * @tparam F
      * @tparam Ptr
@@ -862,14 +862,14 @@ namespace zldsp::fft::common {
      * @param n
      * @param width
      * @param w_ptr
-     * @param twiddles_shift
+     * @param twiddle_strides
      * @param num_stages
      */
     template <typename F>
     inline void radix4_dif_aosoa_depth_first(
         F* HWY_RESTRICT workspace, const size_t n, const size_t width,
         const F* HWY_RESTRICT w_ptr,
-        const size_t* HWY_RESTRICT twiddles_shift,
+        const size_t* HWY_RESTRICT twiddle_strides,
         const size_t num_stages) noexcept {
         if (num_stages == 1) {
             radix4_dif_aosoa_inplace(workspace, n, width, w_ptr);
@@ -878,7 +878,7 @@ namespace zldsp::fft::common {
 
         const size_t sub_n = width << 2;
         const size_t next_width = width >> 2;
-        const F* HWY_RESTRICT next_w_ptr = w_ptr + twiddles_shift[0];
+        const F* HWY_RESTRICT next_w_ptr = w_ptr + twiddle_strides[0];
         for (size_t block = 0; block < n; block += sub_n) {
             F* HWY_RESTRICT ptr_block = workspace + (block << 1);
             radix4_dif_aosoa_block(ptr_block, width, w_ptr);
@@ -889,13 +889,13 @@ namespace zldsp::fft::common {
             } else {
                 radix4_dif_aosoa_depth_first(
                     ptr_block, sub_n, next_width, next_w_ptr,
-                    twiddles_shift + 1, num_stages - 1);
+                    twiddle_strides + 1, num_stages - 1);
             }
         }
     }
 
     /**
-     * performs a forward Stockham DIT radix-4 first pass on AoSoA
+     * perform a forward Stockham DIT radix-4 first pass on AoSoA
      * @tparam F
      * @param in_aosoa
      * @param out_aosoa
@@ -975,7 +975,7 @@ namespace zldsp::fft::common {
     }
 
     /**
-     * performs a forward Stockham DIT radix-8 first pass on AoSoA
+     * perform a forward Stockham DIT radix-8 first pass on AoSoA
      * @tparam F
      * @param in_aosoa
      * @param out_aosoa

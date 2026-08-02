@@ -6,11 +6,9 @@
 #include "common/zldsp_fft_common_execute.hpp"
 
 namespace zldsp::fft {
-    namespace hn = hwy::HWY_NAMESPACE;
-
     template <typename F>
     class CFFT {
-        using C = std::complex<F>;
+        using Complex = std::complex<F>;
 
     private:
         common::CFFTState<F> state_;
@@ -31,61 +29,61 @@ namespace zldsp::fft {
         }
 
         /**
-         * AoS to AoS forward
+         * perform forward CFFT from AoS input to AoS output
          * @param in_buffer
          * @param out_buffer
          */
-        void forward(C* in_buffer, C* out_buffer) noexcept {
+        void forward(Complex* in_buffer, Complex* out_buffer) noexcept {
             execute<true>(common::make_aos(in_buffer), common::make_aos(out_buffer));
         }
 
         /**
-         * AoS to AoS backward
+         * perform backward CFFT from AoS input to AoS output
          * @param in_buffer
          * @param out_buffer
          */
-        void backward(C* in_buffer, C* out_buffer) noexcept {
+        void backward(Complex* in_buffer, Complex* out_buffer) noexcept {
             execute<false>(common::make_aos(in_buffer), common::make_aos(out_buffer));
         }
 
         /**
-         * AoS to SoA forward
+         * perform forward CFFT from AoS input to SoA output
          * @param in_buffer
          * @param out_buffer
          */
-        void forward(C* in_buffer, std::array<F*, 2> out_buffer) noexcept {
+        void forward(Complex* in_buffer, std::array<F*, 2> out_buffer) noexcept {
             execute<true>(common::make_aos(in_buffer), common::make_soa(out_buffer));
         }
 
         /**
-         * AoS to SoA backward
+         * perform backward CFFT from AoS input to SoA output
          * @param in_buffer
          * @param out_buffer
          */
-        void backward(C* in_buffer, std::array<F*, 2> out_buffer) noexcept {
+        void backward(Complex* in_buffer, std::array<F*, 2> out_buffer) noexcept {
             execute<false>(common::make_aos(in_buffer), common::make_soa(out_buffer));
         }
 
         /**
-         * SoA to AoS forward
+         * perform forward CFFT from SoA input to AoS output
          * @param in_buffer
          * @param out_buffer
          */
-        void forward(std::array<F*, 2> in_buffer, C* out_buffer) noexcept {
+        void forward(std::array<F*, 2> in_buffer, Complex* out_buffer) noexcept {
             execute<true>(common::make_soa(in_buffer), common::make_aos(out_buffer));
         }
 
         /**
-         * SoA to AoS backward
+         * perform backward CFFT from SoA input to AoS output
          * @param in_buffer
          * @param out_buffer
          */
-        void backward(std::array<F*, 2> in_buffer, C* out_buffer) noexcept {
+        void backward(std::array<F*, 2> in_buffer, Complex* out_buffer) noexcept {
             execute<false>(common::make_soa(in_buffer), common::make_aos(out_buffer));
         }
 
         /**
-         * SoA to SoA forward
+         * perform forward CFFT from SoA input to SoA output
          * @param in_buffer
          * @param out_buffer
          */
@@ -94,7 +92,7 @@ namespace zldsp::fft {
         }
 
         /**
-         * SoA to SoA backward
+         * perform backward CFFT from SoA input to SoA output
          * @param in_buffer
          * @param out_buffer
          */

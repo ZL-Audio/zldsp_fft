@@ -6,19 +6,17 @@
 #include "common/zldsp_fft_common_execute.hpp"
 
 namespace zldsp::fft {
-    namespace hn = hwy::HWY_NAMESPACE;
-
     template <typename F>
     class RFFT {
-        using C = std::complex<F>;
+        using Complex = std::complex<F>;
 
     private:
         common::CFFTState<F> state_;
         size_t rfft_size_;
         hwy::AlignedFreeUniquePtr<F[]> rfft_twiddles_;
         hwy::AlignedFreeUniquePtr<F[]> rfft_workspace_;
-        common::SoAPtr<F> forward_temp_soa_;
-        common::SoAPtr<F> backward_temp_soa_;
+        common::SoAPtr<F> forward_cfft_output_;
+        common::SoAPtr<F> backward_cfft_input_;
 
     public:
         explicit RFFT(const size_t rfft_order) :
@@ -28,27 +26,27 @@ namespace zldsp::fft {
             common::init_cfft_state(state_.cfft_order, state_);
             if (state_.cfft_order < 6) {
                 state_.workspace = hwy::AllocateAligned<F>(4 * state_.cfft_size);
-                forward_temp_soa_ = common::make_soa<F>({state_.workspace.get(),
-                                                         state_.workspace.get() + state_.cfft_size});
-                backward_temp_soa_ = forward_temp_soa_;
+                forward_cfft_output_ = common::make_soa<F>({state_.workspace.get(),
+                                                            state_.workspace.get() + state_.cfft_size});
+                backward_cfft_input_ = forward_cfft_output_;
             } else {
                 if (state_.num_macro_stages == 0) {
                     if (state_.micro_stages.size() % 2 == 0) {
-                        forward_temp_soa_ = common::make_soa<F>({state_.workspace.get(),
-                                                                 state_.workspace.get() + state_.micro_stride});
+                        forward_cfft_output_ = common::make_soa<F>({state_.workspace.get(),
+                                                                    state_.workspace.get() + state_.micro_stride});
                     } else {
-                        forward_temp_soa_ = common::make_soa<F>({state_.workspace.get() + 2 * state_.micro_stride,
-                                                                 state_.workspace.get() + 3 * state_.micro_stride});
+                        forward_cfft_output_ = common::make_soa<F>({state_.workspace.get() + 2 * state_.micro_stride,
+                                                                    state_.workspace.get() + 3 * state_.micro_stride});
                     }
-                    backward_temp_soa_ = common::make_soa<F>({state_.workspace.get(),
-                                                              state_.workspace.get() + state_.micro_stride});
+                    backward_cfft_input_ = common::make_soa<F>({state_.workspace.get(),
+                                                                 state_.workspace.get() + state_.micro_stride});
                 } else {
                     const size_t rfft_workspace_stride =
                         state_.cfft_size + common::get_cache_color_padding<F>();
                     rfft_workspace_ = hwy::AllocateAligned<F>(2 * rfft_workspace_stride);
-                    forward_temp_soa_ = common::make_soa<F>({rfft_workspace_.get(),
-                                                             rfft_workspace_.get() + rfft_workspace_stride});
-                    backward_temp_soa_ = forward_temp_soa_;
+                    forward_cfft_output_ = common::make_soa<F>({rfft_workspace_.get(),
+                                                                rfft_workspace_.get() + rfft_workspace_stride});
+                    backward_cfft_input_ = forward_cfft_output_;
                 }
             }
             common::generate_rfft_pre_post_twiddles(state_.cfft_order, rfft_twiddles_);
@@ -63,16 +61,16 @@ namespace zldsp::fft {
         }
 
         /**
-         * real to AoS forward
+         * perform forward RFFT from real input to AoS output
          * @param in_buffer
          * @param out_buffer
          */
-        void forward(F* in_buffer, C* out_buffer) noexcept {
+        void forward(F* in_buffer, Complex* out_buffer) noexcept {
             execute_forward(in_buffer, common::make_aos(out_buffer));
         }
 
         /**
-         * real to SoA forward
+         * perform forward RFFT from real input to SoA output
          * @param in_buffer
          * @param out_buffer
          */
@@ -81,16 +79,16 @@ namespace zldsp::fft {
         }
 
         /**
-         * AoS to real backward
+         * perform backward RFFT from AoS input to real output
          * @param in_buffer
          * @param out_buffer
          */
-        void backward(C* in_buffer, F* out_buffer) noexcept {
+        void backward(Complex* in_buffer, F* out_buffer) noexcept {
             execute_backward(common::make_aos(in_buffer), out_buffer);
         }
 
         /**
-         * SoA to real backward
+         * perform backward RFFT from SoA input to real output
          * @param in_buffer
          * @param out_buffer
          */
@@ -99,15 +97,15 @@ namespace zldsp::fft {
         }
 
         /**
-         * real to squared magnitude forward
+         * perform forward RFFT and write squared magnitudes
          * @param in_buffer
          * @param out_buffer
          */
         void forward_sqr_mag(F* in_buffer, F* out_buffer) noexcept {
             common::execute_cfft<true>(
-                state_, common::make_aos(reinterpret_cast<C*>(in_buffer)), forward_temp_soa_);
+                state_, common::make_aos(reinterpret_cast<Complex*>(in_buffer)), forward_cfft_output_);
             common::execute_rfft_forward_sqr_mag_post(
-                state_.cfft_order, rfft_twiddles_.get(), forward_temp_soa_, out_buffer);
+                state_.cfft_order, rfft_twiddles_.get(), forward_cfft_output_, out_buffer);
         }
 
     private:
@@ -120,9 +118,9 @@ namespace zldsp::fft {
         template <typename OutPtr>
         void execute_forward(F* in_ptr, OutPtr out_ptr) {
             common::execute_cfft<true>(
-                state_, common::make_aos(reinterpret_cast<C*>(in_ptr)), forward_temp_soa_);
+                state_, common::make_aos(reinterpret_cast<Complex*>(in_ptr)), forward_cfft_output_);
             common::execute_rfft_forward_post(
-                state_.cfft_order, rfft_twiddles_.get(), forward_temp_soa_, out_ptr);
+                state_.cfft_order, rfft_twiddles_.get(), forward_cfft_output_, out_ptr);
         }
 
         /**
@@ -134,9 +132,9 @@ namespace zldsp::fft {
         template <typename InPtr>
         void execute_backward(InPtr in_ptr, F* out_ptr) noexcept {
             common::execute_rfft_backward_pre(
-                state_.cfft_order, rfft_twiddles_.get(), in_ptr, backward_temp_soa_);
+                state_.cfft_order, rfft_twiddles_.get(), in_ptr, backward_cfft_input_);
             common::execute_cfft<false>(
-                state_, backward_temp_soa_, common::make_aos<F>(reinterpret_cast<C*>(out_ptr)));
+                state_, backward_cfft_input_, common::make_aos<F>(reinterpret_cast<Complex*>(out_ptr)));
         }
     };
 }

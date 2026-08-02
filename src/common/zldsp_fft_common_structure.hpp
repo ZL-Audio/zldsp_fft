@@ -8,10 +8,10 @@ namespace zldsp::fft::common {
 
     template <typename F>
     struct AoSPtr {
-        F* HWY_RESTRICT comp;
+        F* HWY_RESTRICT interleaved;
 
         [[nodiscard]] HWY_INLINE constexpr AoSPtr shift(const size_t offset) const noexcept {
-            return AoSPtr{comp + offset};
+            return AoSPtr{interleaved + offset};
         }
 
         [[nodiscard]] static constexpr size_t get_complex_offset(const size_t offset) noexcept {
@@ -34,7 +34,7 @@ namespace zldsp::fft::common {
     };
 
     /**
-     * load complex numbers from ptr to SIMD register
+     * load complex numbers from a pointer wrapper into SIMD registers
      * @tparam is_forward
      * @tparam D
      * @tparam Ptr
@@ -57,15 +57,15 @@ namespace zldsp::fft::common {
             }
         } else {
             if constexpr (is_forward) {
-                hn::LoadInterleaved2(d, ptr.comp, r, i);
+                hn::LoadInterleaved2(d, ptr.interleaved, r, i);
             } else {
-                hn::LoadInterleaved2(d, ptr.comp, i, r);
+                hn::LoadInterleaved2(d, ptr.interleaved, i, r);
             }
         }
     }
 
     /**
-     * store complex numbers from SIMD register to ptr
+     * store complex numbers from SIMD registers through a pointer wrapper
      * @tparam is_forward
      * @tparam D
      * @tparam Ptr
@@ -88,15 +88,15 @@ namespace zldsp::fft::common {
             }
         } else {
             if constexpr (is_forward) {
-                hn::StoreInterleaved2(r, i, d, ptr.comp);
+                hn::StoreInterleaved2(r, i, d, ptr.interleaved);
             } else {
-                hn::StoreInterleaved2(i, r, d, ptr.comp);
+                hn::StoreInterleaved2(i, r, d, ptr.interleaved);
             }
         }
     }
 
     /**
-     * load complex numbers from ptr to scalar
+     * load a complex number from a pointer wrapper into scalars
      * @tparam is_forward
      * @tparam F
      * @tparam Ptr
@@ -110,13 +110,13 @@ namespace zldsp::fft::common {
             r = is_forward ? ptr.real[0] : ptr.imag[0];
             i = is_forward ? ptr.imag[0] : ptr.real[0];
         } else {
-            r = is_forward ? ptr.comp[0] : ptr.comp[1];
-            i = is_forward ? ptr.comp[1] : ptr.comp[0];
+            r = is_forward ? ptr.interleaved[0] : ptr.interleaved[1];
+            i = is_forward ? ptr.interleaved[1] : ptr.interleaved[0];
         }
     }
 
     /**
-     * store complex numbers from scalar to ptr
+     * store a complex number from scalars through a pointer wrapper
      * @tparam is_forward
      * @tparam F
      * @tparam Ptr
@@ -130,13 +130,13 @@ namespace zldsp::fft::common {
             ptr.real[0] = is_forward ? r : i;
             ptr.imag[0] = is_forward ? i : r;
         } else {
-            ptr.comp[0] = is_forward ? r : i;
-            ptr.comp[1] = is_forward ? i : r;
+            ptr.interleaved[0] = is_forward ? r : i;
+            ptr.interleaved[1] = is_forward ? i : r;
         }
     }
 
     /**
-     * make a AoSPtr from a complex pointer
+     * make an AoSPtr from a complex pointer
      * @tparam F
      * @param ptr
      * @return
