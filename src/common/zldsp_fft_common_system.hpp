@@ -136,14 +136,7 @@ namespace zldsp::fft::common {
             ? static_cast<size_t>(0)
             : static_cast<size_t>(std::bit_width(max_l1_elements) - 1);
 
-        const size_t l2_size = get_l2_cache_size();
-        const size_t max_l2_elements = l2_size / (12 * sizeof(F));
-        const size_t max_l2_order = (max_l2_elements == 0)
-            ? static_cast<size_t>(0)
-            : static_cast<size_t>(std::bit_width(max_l2_elements) - 1);
-
-        const size_t hybrid_switch_order =
-            std::max<size_t>(max_l1_order + 4, max_l2_order);
+        const size_t hybrid_switch_order = max_l1_order + 4;
 
         return {max_l1_order, hybrid_switch_order};
     }

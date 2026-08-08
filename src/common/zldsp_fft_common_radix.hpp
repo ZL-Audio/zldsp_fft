@@ -463,6 +463,225 @@ namespace zldsp::fft::common {
     }
 
     /**
+     * finish one of the streamed AVX2 radix-8 transposes
+     * @tparam D
+     * @tparam F
+     * @param d
+     * @param out_shift
+     * @param t0
+     * @param t1
+     * @param t2
+     * @param t3
+     * @param out_offset0
+     * @param out_offset1
+     * @param out_offset2
+     * @param out_offset3
+     */
+    template <class D, typename F>
+    HWY_INLINE void store_radix8_transpose(
+        D d, F* HWY_RESTRICT out_shift,
+        hn::Vec<D> t0, hn::Vec<D> t1, hn::Vec<D> t2, hn::Vec<D> t3,
+        const size_t out_offset0, const size_t out_offset1,
+        const size_t out_offset2, const size_t out_offset3) noexcept {
+        static constexpr size_t lanes = hn::MaxLanes(d);
+        if constexpr (lanes == 4 && sizeof(F) == 8) {
+            hn::Store(hn::ConcatLowerLower(d, t1, t0), d, out_shift + out_offset0);
+            hn::Store(hn::ConcatUpperUpper(d, t1, t0), d, out_shift + out_offset2);
+            hn::Store(hn::ConcatLowerLower(d, t3, t2), d, out_shift + out_offset1);
+            hn::Store(hn::ConcatUpperUpper(d, t3, t2), d, out_shift + out_offset3);
+        } else {
+            static_assert(lanes == 8 && sizeof(F) == 4);
+            hn::Repartition<uint64_t, D> d64;
+            {
+                const auto m0 = hn::BitCast(d, hn::InterleaveLower(
+                    d64, hn::BitCast(d64, t0), hn::BitCast(d64, t1)));
+                const auto m1 = hn::BitCast(d, hn::InterleaveUpper(
+                    d64, hn::BitCast(d64, t0), hn::BitCast(d64, t1)));
+                hn::Store(hn::ConcatLowerLower(d, m1, m0), d, out_shift + out_offset0);
+                hn::Store(hn::ConcatUpperUpper(d, m1, m0), d, out_shift + out_offset2);
+            }
+            {
+                const auto m2 = hn::BitCast(d, hn::InterleaveLower(
+                    d64, hn::BitCast(d64, t2), hn::BitCast(d64, t3)));
+                const auto m3 = hn::BitCast(d, hn::InterleaveUpper(
+                    d64, hn::BitCast(d64, t2), hn::BitCast(d64, t3)));
+                hn::Store(hn::ConcatLowerLower(d, m3, m2), d, out_shift + out_offset1);
+                hn::Store(hn::ConcatUpperUpper(d, m3, m2), d, out_shift + out_offset3);
+            }
+        }
+    }
+
+    /**
+     * combine one radix-8 component and transpose it a frequency pair at a time
+     * @tparam D
+     * @tparam F
+     * @param d
+     * @param out_shift
+     * @param y00
+     * @param y01
+     * @param y02
+     * @param y03
+     * @param y10
+     * @param y11
+     * @param y12
+     * @param y13
+     * @param component_offset
+     */
+    template <class D, typename F>
+    HWY_INLINE void store_radix8_first_pass_component(
+        D d, F* HWY_RESTRICT out_shift,
+        hn::Vec<D> y00, hn::Vec<D> y01, hn::Vec<D> y02, hn::Vec<D> y03,
+        hn::Vec<D> y10, hn::Vec<D> y11, hn::Vec<D> y12, hn::Vec<D> y13,
+        const size_t component_offset) noexcept {
+        static constexpr size_t lanes = hn::MaxLanes(d);
+
+        hn::Vec<D> lower_t0, lower_t2, upper_t0, upper_t2;
+        {
+            const auto sum0 = hn::Add(y00, y10);
+            const auto diff0 = hn::Sub(y00, y10);
+            const auto lower0 = hn::InterleaveLower(d, sum0, diff0);
+            const auto upper0 = hn::InterleaveUpper(d, sum0, diff0);
+
+            const auto sum1 = hn::Add(y01, y11);
+            const auto diff1 = hn::Sub(y01, y11);
+            const auto lower1 = hn::InterleaveLower(d, sum1, diff1);
+            const auto upper1 = hn::InterleaveUpper(d, sum1, diff1);
+
+            lower_t0 = hn::InterleaveLower(d, lower0, lower1);
+            lower_t2 = hn::InterleaveUpper(d, lower0, lower1);
+            upper_t0 = hn::InterleaveLower(d, upper0, upper1);
+            upper_t2 = hn::InterleaveUpper(d, upper0, upper1);
+        }
+
+        hn::Vec<D> lower_t1, lower_t3, upper_t1, upper_t3;
+        {
+            const auto sum2 = hn::Add(y02, y12);
+            const auto diff2 = hn::Sub(y02, y12);
+            const auto lower2 = hn::InterleaveLower(d, sum2, diff2);
+            const auto upper2 = hn::InterleaveUpper(d, sum2, diff2);
+
+            const auto sum3 = hn::Add(y03, y13);
+            const auto diff3 = hn::Sub(y03, y13);
+            const auto lower3 = hn::InterleaveLower(d, sum3, diff3);
+            const auto upper3 = hn::InterleaveUpper(d, sum3, diff3);
+
+            lower_t1 = hn::InterleaveLower(d, lower2, lower3);
+            lower_t3 = hn::InterleaveUpper(d, lower2, lower3);
+            upper_t1 = hn::InterleaveLower(d, upper2, upper3);
+            upper_t3 = hn::InterleaveUpper(d, upper2, upper3);
+        }
+
+        store_radix8_transpose(
+            d, out_shift, lower_t0, lower_t1, lower_t2, lower_t3,
+            component_offset, component_offset + 2 * lanes,
+            component_offset + 8 * lanes, component_offset + 10 * lanes);
+        store_radix8_transpose(
+            d, out_shift, upper_t0, upper_t1, upper_t2, upper_t3,
+            component_offset + 4 * lanes, component_offset + 6 * lanes,
+            component_offset + 12 * lanes, component_offset + 14 * lanes);
+    }
+
+    /**
+     * perform an AVX2 radix-8 first pass using bounded scratch and streamed transposes
+     * @tparam D
+     * @tparam Load
+     * @tparam F
+     * @param d
+     * @param load
+     * @param out_shift
+     * @param in_offset1
+     * @param in_offset2
+     * @param in_offset3
+     * @param in_offset4
+     * @param in_offset5
+     * @param in_offset6
+     * @param in_offset7
+     */
+    template <class D, class Load, typename F>
+    HWY_INLINE void radix8_first_pass_low_live(
+        D d, Load&& load, F* HWY_RESTRICT out_shift,
+        const size_t in_offset1, const size_t in_offset2,
+        const size_t in_offset3, const size_t in_offset4,
+        const size_t in_offset5, const size_t in_offset6,
+        const size_t in_offset7) noexcept {
+        static constexpr size_t lanes = hn::MaxLanes(d);
+        static constexpr F kInvSqrt2 = static_cast<F>(1.0 / std::numbers::sqrt2);
+        const auto inv_sqrt2 = hn::Set(d, kInvSqrt2);
+
+        HWY_ALIGN F even_imag[4 * lanes];
+        hn::Vec<D> y00_r, y01_r, y02_r, y03_r;
+        {
+            hn::Vec<D> a_r, a_i, b_r, b_i;
+            load(0, a_r, a_i);
+            load(in_offset4, b_r, b_i);
+            const auto t0_r = hn::Add(a_r, b_r);
+            const auto t0_i = hn::Add(a_i, b_i);
+            const auto t1_r = hn::Sub(a_r, b_r);
+            const auto t1_i = hn::Sub(a_i, b_i);
+
+            load(in_offset2, a_r, a_i);
+            load(in_offset6, b_r, b_i);
+            const auto t2_r = hn::Add(a_r, b_r);
+            const auto t2_i = hn::Add(a_i, b_i);
+            const auto t3_r = hn::Sub(a_r, b_r);
+            const auto t3_i = hn::Sub(a_i, b_i);
+
+            y00_r = hn::Add(t0_r, t2_r);
+            y01_r = hn::Add(t1_r, t3_i);
+            y02_r = hn::Sub(t0_r, t2_r);
+            y03_r = hn::Sub(t1_r, t3_i);
+            hn::Store(hn::Add(t0_i, t2_i), d, even_imag);
+            hn::Store(hn::Sub(t1_i, t3_r), d, even_imag + lanes);
+            hn::Store(hn::Sub(t0_i, t2_i), d, even_imag + 2 * lanes);
+            hn::Store(hn::Add(t1_i, t3_r), d, even_imag + 3 * lanes);
+        }
+        HWY_FENCE;
+
+        hn::Vec<D> y10_r, y10_i, y11_r, y11_i, y12_r, y12_i, y13_r, y13_i;
+        {
+            hn::Vec<D> a_r, a_i, b_r, b_i;
+            load(in_offset1, a_r, a_i);
+            load(in_offset5, b_r, b_i);
+            const auto u0_r = hn::Add(a_r, b_r);
+            const auto u0_i = hn::Add(a_i, b_i);
+            const auto u1_r = hn::Sub(a_r, b_r);
+            const auto u1_i = hn::Sub(a_i, b_i);
+
+            load(in_offset3, a_r, a_i);
+            load(in_offset7, b_r, b_i);
+            const auto u2_r = hn::Add(a_r, b_r);
+            const auto u2_i = hn::Add(a_i, b_i);
+            const auto u3_r = hn::Sub(a_r, b_r);
+            const auto u3_i = hn::Sub(a_i, b_i);
+
+            y10_r = hn::Add(u0_r, u2_r);
+            y10_i = hn::Add(u0_i, u2_i);
+            const auto raw1_r = hn::Add(u1_r, u3_i);
+            const auto raw1_i = hn::Sub(u1_i, u3_r);
+            y11_r = hn::Mul(hn::Add(raw1_r, raw1_i), inv_sqrt2);
+            y11_i = hn::Mul(hn::Sub(raw1_i, raw1_r), inv_sqrt2);
+            y12_r = hn::Sub(u0_i, u2_i);
+            y12_i = hn::Neg(hn::Sub(u0_r, u2_r));
+            const auto raw3_r = hn::Sub(u1_r, u3_i);
+            const auto raw3_i = hn::Add(u1_i, u3_r);
+            y13_r = hn::Mul(hn::Sub(raw3_i, raw3_r), inv_sqrt2);
+            y13_i = hn::Mul(hn::Neg(hn::Add(raw3_r, raw3_i)), inv_sqrt2);
+        }
+
+        store_radix8_first_pass_component(
+            d, out_shift, y00_r, y01_r, y02_r, y03_r,
+            y10_r, y11_r, y12_r, y13_r, 0);
+
+        const auto y00_i = hn::Load(d, even_imag);
+        const auto y01_i = hn::Load(d, even_imag + lanes);
+        const auto y02_i = hn::Load(d, even_imag + 2 * lanes);
+        const auto y03_i = hn::Load(d, even_imag + 3 * lanes);
+        store_radix8_first_pass_component(
+            d, out_shift, y00_i, y01_i, y02_i, y03_i,
+            y10_i, y11_i, y12_i, y13_i, lanes);
+    }
+
+    /**
      * perform a Stockham DIT radix-8 first pass and convert data from AoS/SoA to AoSoA
      * @tparam is_forward
      * @tparam F
@@ -494,6 +713,19 @@ namespace zldsp::fft::common {
 
         HWY_ASSUME(one_eight_n >= lanes);
         HWY_ASSUME((one_eight_n % lanes) == 0);
+        if constexpr (HWY_TARGET == HWY_AVX2) {
+            for (size_t j = 0; j + lanes <= one_eight_n; j += lanes) {
+                const Ptr in_shift = in.shift(Ptr::get_complex_offset(j));
+                auto load = [&](const size_t offset, auto& r, auto& i) {
+                    load_complex<is_forward>(d, in_shift.shift(offset), r, i);
+                };
+                F* HWY_RESTRICT out_shift = out_aosoa + (j << 4);
+                radix8_first_pass_low_live(
+                    d, load, out_shift, in_offset1, in_offset2, in_offset3,
+                    in_offset4, in_offset5, in_offset6, in_offset7);
+            }
+            return;
+        }
         for (size_t j = 0; j + lanes <= one_eight_n; j += lanes) {
             const Ptr in_shift = in.shift(Ptr::get_complex_offset(j));
 
@@ -1004,6 +1236,20 @@ namespace zldsp::fft::common {
 
         HWY_ASSUME(one_eight_n >= lanes);
         HWY_ASSUME((one_eight_n % lanes) == 0);
+        if constexpr (HWY_TARGET == HWY_AVX2) {
+            for (size_t j = 0; j + lanes <= one_eight_n; j += lanes) {
+                const F* HWY_RESTRICT in_shift = in_aosoa + (j << 1);
+                auto load = [&](const size_t offset, auto& r, auto& i) {
+                    r = hn::Load(d, in_shift + offset);
+                    i = hn::Load(d, in_shift + offset + lanes);
+                };
+                F* HWY_RESTRICT out_shift = out_aosoa + (j << 4);
+                radix8_first_pass_low_live(
+                    d, load, out_shift, in_offset1, in_offset2, in_offset3,
+                    in_offset4, in_offset5, in_offset6, in_offset7);
+            }
+            return;
+        }
         for (size_t j = 0; j + lanes <= one_eight_n; j += lanes) {
             const F* HWY_RESTRICT in_shift = in_aosoa + (j << 1);
 
