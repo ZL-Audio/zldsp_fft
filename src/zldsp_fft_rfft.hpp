@@ -25,7 +25,7 @@ namespace zldsp::fft {
             state_.cfft_size = 1 << state_.cfft_order;
             common::init_cfft_state(state_.cfft_order, state_);
             if (state_.cfft_order < 6) {
-                state_.workspace = hwy::AllocateAligned<F>(4 * state_.cfft_size);
+                state_.workspace = common::allocate_aligned<F>(4 * state_.cfft_size);
                 forward_cfft_output_ = common::make_soa<F>({state_.workspace.get(),
                                                             state_.workspace.get() + state_.cfft_size});
                 backward_cfft_input_ = forward_cfft_output_;
@@ -43,7 +43,7 @@ namespace zldsp::fft {
                 } else {
                     const size_t rfft_workspace_stride =
                         state_.cfft_size + common::get_cache_color_padding<F>();
-                    rfft_workspace_ = hwy::AllocateAligned<F>(2 * rfft_workspace_stride);
+                    rfft_workspace_ = common::allocate_aligned<F>(2 * rfft_workspace_stride);
                     forward_cfft_output_ = common::make_soa<F>({rfft_workspace_.get(),
                                                                 rfft_workspace_.get() + rfft_workspace_stride});
                     backward_cfft_input_ = forward_cfft_output_;

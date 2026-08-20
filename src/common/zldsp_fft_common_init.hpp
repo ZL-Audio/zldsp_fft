@@ -1,12 +1,15 @@
 #pragma once
 
-#include <hwy/aligned_allocator.h>
-#include <hwy/highway.h>
 #include <algorithm>
 #include <cmath>
 #include <numeric>
 #include <vector>
 #include <utility>
+#include <cstddef>
+#include <new>
+
+#include <hwy/highway.h>
+#include <hwy/aligned_allocator.h>
 
 #include "zldsp_fft_common_system.hpp"
 #include "zldsp_fft_common_math.hpp"
@@ -21,6 +24,15 @@ namespace zldsp::fft::common {
         kRadix4,
         kRadix4LastPass,
     };
+
+    template <typename T>
+    [[nodiscard]] inline hwy::AlignedFreeUniquePtr<T[]> allocate_aligned(const std::size_t count) {
+        auto ptr = hwy::AllocateAligned<T>(count);
+        if (!ptr) {
+            throw std::bad_alloc{};
+        }
+        return ptr;
+    }
 
     template <typename F>
     struct CFFTState {
@@ -91,7 +103,7 @@ namespace zldsp::fft::common {
                                             hwy::AlignedFreeUniquePtr<F[]>& twiddles) {
         const size_t num_twiddles = (order == 4 ? 60 : 120);
 
-        twiddles = hwy::AllocateAligned<F>(num_twiddles << 1);
+        twiddles = common::allocate_aligned<F>(num_twiddles << 1);
         F* HWY_RESTRICT twiddles_r = twiddles.get();
         F* HWY_RESTRICT twiddles_i = twiddles.get() + num_twiddles;
 
@@ -143,7 +155,7 @@ namespace zldsp::fft::common {
         {
             const auto num_twiddles =
                 std::accumulate(twiddle_strides.begin(), twiddle_strides.end(), static_cast<size_t>(0));
-            twiddles = hwy::AllocateAligned<F>(num_twiddles);
+            twiddles = common::allocate_aligned<F>(num_twiddles);
         }
         // calculate twiddle values
         {
@@ -262,7 +274,7 @@ namespace zldsp::fft::common {
         {
             const auto num_twiddles =
                 std::accumulate(twiddle_strides.begin(), twiddle_strides.end(), static_cast<size_t>(0));
-            twiddles = hwy::AllocateAligned<F>(num_twiddles);
+            twiddles = common::allocate_aligned<F>(num_twiddles);
         }
         // calculate twiddle values
         {
@@ -330,7 +342,7 @@ namespace zldsp::fft::common {
                 state.micro_cfft_order, state.micro_stages,
                 state.micro_twiddle_strides, state.micro_twiddles);
             if (state.micro_stride > 0) {
-                state.workspace = hwy::AllocateAligned<F>(4 * state.micro_stride);
+                state.workspace = common::allocate_aligned<F>(4 * state.micro_stride);
             }
         } else {
             if ((cfft_order - max_l1_order) % 2 != 0) {
@@ -361,7 +373,7 @@ namespace zldsp::fft::common {
                 2 * state.macro_stride +
                 2 * state.transpose_tile_stride +
                 4 * state.micro_stride;
-            state.workspace = hwy::AllocateAligned<F>(workspace_size);
+            state.workspace = common::allocate_aligned<F>(workspace_size);
 
             common::init_radix4_digit_reversal(
                 state.num_micro_ffts, state.num_macro_stages,
@@ -400,7 +412,7 @@ namespace zldsp::fft::common {
         }
         const size_t num_blocks = (num_elements + lanes - 1) / lanes;
         const size_t twiddle_size = num_blocks * lanes * 2;
-        rfft_twiddles = hwy::AllocateAligned<F>(twiddle_size);
+        rfft_twiddles = common::allocate_aligned<F>(twiddle_size);
 
         const double phase_step = 2.0 / static_cast<double>(rfft_size);
         for (size_t b = 0; b < num_blocks; ++b) {
