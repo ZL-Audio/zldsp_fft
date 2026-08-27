@@ -372,7 +372,7 @@ namespace zldsp::fft::common {
             const size_t workspace_size =
                 2 * state.macro_stride +
                 2 * state.transpose_tile_stride +
-                4 * state.micro_stride;
+                2 * state.micro_stride;
             state.workspace = common::allocate_aligned<F>(workspace_size);
 
             common::init_radix4_digit_reversal(
