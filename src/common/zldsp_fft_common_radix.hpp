@@ -1,9 +1,16 @@
-#pragma once
+#if defined(ZLDSP_FFT_COMMON_RADIX_HPP_) == defined(HWY_TARGET_TOGGLE)
+#ifdef ZLDSP_FFT_COMMON_RADIX_HPP_
+#undef ZLDSP_FFT_COMMON_RADIX_HPP_
+#else
+#define ZLDSP_FFT_COMMON_RADIX_HPP_
+#endif
 
 #include "zldsp_fft_common_init.hpp"
 #include "zldsp_fft_common_structure.hpp"
 
-namespace zldsp::fft::common {
+HWY_BEFORE_NAMESPACE();
+
+namespace zldsp::fft::HWY_NAMESPACE::common {
     namespace hn = hwy::HWY_NAMESPACE;
 
     /**
@@ -1413,3 +1420,7 @@ namespace zldsp::fft::common {
         }
     }
 }
+
+HWY_AFTER_NAMESPACE();
+
+#endif  // ZLDSP_FFT_COMMON_RADIX_HPP_

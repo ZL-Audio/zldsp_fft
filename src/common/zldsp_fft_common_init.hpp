@@ -1,4 +1,9 @@
-#pragma once
+#if defined(ZLDSP_FFT_COMMON_INIT_HPP_) == defined(HWY_TARGET_TOGGLE)
+#ifdef ZLDSP_FFT_COMMON_INIT_HPP_
+#undef ZLDSP_FFT_COMMON_INIT_HPP_
+#else
+#define ZLDSP_FFT_COMMON_INIT_HPP_
+#endif
 
 #include <algorithm>
 #include <cmath>
@@ -14,7 +19,9 @@
 #include "zldsp_fft_common_system.hpp"
 #include "zldsp_fft_common_math.hpp"
 
-namespace zldsp::fft::common {
+HWY_BEFORE_NAMESPACE();
+
+namespace zldsp::fft::HWY_NAMESPACE::common {
     namespace hn = hwy::HWY_NAMESPACE;
 
     enum class StageType {
@@ -430,3 +437,7 @@ namespace zldsp::fft::common {
         }
     }
 }
+
+HWY_AFTER_NAMESPACE();
+
+#endif  // ZLDSP_FFT_COMMON_INIT_HPP_

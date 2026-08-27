@@ -1,9 +1,15 @@
-#pragma once
+#if defined(ZLDSP_FFT_COMMON_SYSTEM_HPP_) == defined(HWY_TARGET_TOGGLE)
+#ifdef ZLDSP_FFT_COMMON_SYSTEM_HPP_
+#undef ZLDSP_FFT_COMMON_SYSTEM_HPP_
+#else
+#define ZLDSP_FFT_COMMON_SYSTEM_HPP_
+#endif
 
 #include <algorithm>
 #include <bit>
 #include <utility>
 #include <vector>
+#include <hwy/highway.h>
 #if defined(__APPLE__)
 #include <sys/types.h>
 #include <sys/sysctl.h>
@@ -16,7 +22,9 @@
 #include <windows.h>
 #endif
 
-namespace zldsp::fft::common {
+HWY_BEFORE_NAMESPACE();
+
+namespace zldsp::fft::HWY_NAMESPACE::common {
     /**
      * get data-cache line size
      * @return data-cache line size in bytes
@@ -141,3 +149,7 @@ namespace zldsp::fft::common {
         return {max_l1_order, hybrid_switch_order};
     }
 }
+
+HWY_AFTER_NAMESPACE();
+
+#endif  // ZLDSP_FFT_COMMON_SYSTEM_HPP_

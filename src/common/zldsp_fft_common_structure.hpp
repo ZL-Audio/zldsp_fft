@@ -1,9 +1,16 @@
-#pragma once
+#if defined(ZLDSP_FFT_COMMON_STRUCTURE_HPP_) == defined(HWY_TARGET_TOGGLE)
+#ifdef ZLDSP_FFT_COMMON_STRUCTURE_HPP_
+#undef ZLDSP_FFT_COMMON_STRUCTURE_HPP_
+#else
+#define ZLDSP_FFT_COMMON_STRUCTURE_HPP_
+#endif
 
 #include <complex>
 #include <hwy/highway.h>
 
-namespace zldsp::fft::common {
+HWY_BEFORE_NAMESPACE();
+
+namespace zldsp::fft::HWY_NAMESPACE::common {
     namespace hn = hwy::HWY_NAMESPACE;
 
     template <typename F>
@@ -157,3 +164,7 @@ namespace zldsp::fft::common {
         return SoAPtr<F>{ptr[0], ptr[1]};
     }
 }
+
+HWY_AFTER_NAMESPACE();
+
+#endif  // ZLDSP_FFT_COMMON_STRUCTURE_HPP_

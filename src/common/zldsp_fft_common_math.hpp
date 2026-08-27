@@ -1,9 +1,17 @@
-#pragma once
+#if defined(ZLDSP_FFT_COMMON_MATH_HPP_) == defined(HWY_TARGET_TOGGLE)
+#ifdef ZLDSP_FFT_COMMON_MATH_HPP_
+#undef ZLDSP_FFT_COMMON_MATH_HPP_
+#else
+#define ZLDSP_FFT_COMMON_MATH_HPP_
+#endif
 
 #include <cmath>
 #include <numbers>
+#include <hwy/highway.h>
 
-namespace zldsp::fft::common::math {
+HWY_BEFORE_NAMESPACE();
+
+namespace zldsp::fft::HWY_NAMESPACE::common::math {
 #if defined(__APPLE__)
 
     inline double cospi(const double x) {
@@ -26,3 +34,7 @@ namespace zldsp::fft::common::math {
 
 #endif
 }
+
+HWY_AFTER_NAMESPACE();
+
+#endif  // ZLDSP_FFT_COMMON_MATH_HPP_
