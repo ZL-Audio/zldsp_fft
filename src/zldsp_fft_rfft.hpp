@@ -1,5 +1,9 @@
 #pragma once
 
+#include <array>
+#include <complex>
+#include <cstddef>
+
 #include "zldsp_fft_rfft-inl.hpp"
 
 namespace zldsp::fft {
@@ -10,13 +14,14 @@ namespace zldsp::fft {
         HWY_STATIC_NAMESPACE::RFFT<F> impl_;
 
     public:
-        explicit RFFT(const size_t rfft_order) : impl_(rfft_order) {}
+        explicit RFFT(const size_t rfft_order) : impl_(rfft_order) {
+        }
 
-        [[nodiscard]] size_t get_size() const {
+        [[nodiscard]] size_t get_size() const noexcept {
             return impl_.get_size();
         }
 
-        [[nodiscard]] size_t get_order() const {
+        [[nodiscard]] size_t get_order() const noexcept {
             return impl_.get_order();
         }
 

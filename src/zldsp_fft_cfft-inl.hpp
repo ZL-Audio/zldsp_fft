@@ -12,8 +12,8 @@
 
 #include <hwy/highway.h>
 
-#include "common/zldsp_fft_common_init.hpp"
 #include "common/zldsp_fft_common_execute.hpp"
+#include "common/zldsp_fft_common_init.hpp"
 
 HWY_BEFORE_NAMESPACE();
 
@@ -22,8 +22,7 @@ namespace zldsp::fft::HWY_NAMESPACE {
     class CFFT {
         static_assert(std::is_same_v<F, float> || std::is_same_v<F, double>,
                       "zldsp::fft::CFFT supports float and double");
-        static_assert(!HWY_HAVE_SCALABLE,
-                      "zldsp::fft requires a fixed-width Highway target");
+        static_assert(!HWY_HAVE_SCALABLE, "zldsp::fft requires a fixed-width Highway target");
 
         using TargetTag = hwy::HWY_NAMESPACE::ScalableTag<F>;
         static constexpr size_t kTargetVectorBytes = TargetTag{}.MaxBytes();
@@ -37,16 +36,16 @@ namespace zldsp::fft::HWY_NAMESPACE {
 
     public:
         explicit CFFT(const size_t cfft_order) {
-            state_.cfft_size = 1 << cfft_order;
+            state_.cfft_size = static_cast<size_t>(1) << cfft_order;
             state_.cfft_order = cfft_order;
             common::init_cfft_state(cfft_order, state_);
         }
 
-        [[nodiscard]] size_t get_size() const {
+        [[nodiscard]] size_t get_size() const noexcept {
             return state_.cfft_size;
         }
 
-        [[nodiscard]] size_t get_order() const {
+        [[nodiscard]] size_t get_order() const noexcept {
             return state_.cfft_order;
         }
 
@@ -128,12 +127,12 @@ namespace zldsp::fft::HWY_NAMESPACE {
          * @tparam is_forward
          * @tparam InPtr
          * @tparam OutPtr
-         * @param in_ptr
-         * @param out_ptr
+         * @param in
+         * @param out
          */
         template <bool is_forward, typename InPtr, typename OutPtr>
-        void execute(InPtr in_ptr, OutPtr out_ptr) noexcept {
-            common::execute_cfft<is_forward>(state_, in_ptr, out_ptr);
+        void execute(InPtr in, OutPtr out) noexcept {
+            common::execute_cfft<is_forward>(state_, in, out);
         }
     };
 }

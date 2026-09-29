@@ -1,5 +1,9 @@
 #pragma once
 
+#include <array>
+#include <complex>
+#include <cstddef>
+
 #include "zldsp_fft_cfft-inl.hpp"
 
 namespace zldsp::fft {
@@ -10,13 +14,14 @@ namespace zldsp::fft {
         HWY_STATIC_NAMESPACE::CFFT<F> impl_;
 
     public:
-        explicit CFFT(const size_t cfft_order) : impl_(cfft_order) {}
+        explicit CFFT(const size_t cfft_order) : impl_(cfft_order) {
+        }
 
-        [[nodiscard]] size_t get_size() const {
+        [[nodiscard]] size_t get_size() const noexcept {
             return impl_.get_size();
         }
 
-        [[nodiscard]] size_t get_order() const {
+        [[nodiscard]] size_t get_order() const noexcept {
             return impl_.get_order();
         }
 

@@ -5,7 +5,11 @@
 #define ZLDSP_FFT_COMMON_STRUCTURE_HPP_
 #endif
 
+#include <array>
 #include <complex>
+#include <cstddef>
+#include <type_traits>
+
 #include <hwy/highway.h>
 
 HWY_BEFORE_NAMESPACE();
@@ -22,7 +26,7 @@ namespace zldsp::fft::HWY_NAMESPACE::common {
         }
 
         [[nodiscard]] static constexpr size_t get_complex_offset(const size_t offset) noexcept {
-            return (offset << 1);
+            return offset << 1;
         }
     };
 
@@ -51,7 +55,7 @@ namespace zldsp::fft::HWY_NAMESPACE::common {
      * @param r
      * @param i
      */
-    template <bool is_forward, class D, typename Ptr, typename V>
+    template <bool is_forward, typename D, typename Ptr, typename V>
     HWY_INLINE void load_complex(D d, Ptr ptr, V& r, V& i) noexcept {
         using F = hn::TFromD<D>;
         if constexpr (std::is_same_v<Ptr, SoAPtr<F>>) {
@@ -82,7 +86,7 @@ namespace zldsp::fft::HWY_NAMESPACE::common {
      * @param r
      * @param i
      */
-    template <bool is_forward, class D, typename Ptr, typename V>
+    template <bool is_forward, typename D, typename Ptr, typename V>
     HWY_INLINE void store_complex(D d, Ptr ptr, const V r, const V i) noexcept {
         using F = hn::TFromD<D>;
         if constexpr (std::is_same_v<Ptr, SoAPtr<F>>) {
@@ -146,25 +150,25 @@ namespace zldsp::fft::HWY_NAMESPACE::common {
      * make an AoSPtr from a complex pointer
      * @tparam F
      * @param ptr
-     * @return
+     * @return AoS pointer wrapper
      */
     template <typename F>
-    static AoSPtr<F> make_aos(std::complex<F>* ptr) noexcept {
+    [[nodiscard]] static AoSPtr<F> make_aos(std::complex<F>* ptr) noexcept {
         return AoSPtr<F>{reinterpret_cast<F*>(ptr)};
     }
 
     /**
-     * make a SoAPtr from two real/imag pointers
+     * make a SoAPtr from two real/imaginary pointers
      * @tparam F
      * @param ptr
-     * @return
+     * @return SoA pointer wrapper
      */
     template <typename F>
-    static SoAPtr<F> make_soa(std::array<F*, 2> ptr) noexcept {
+    [[nodiscard]] static SoAPtr<F> make_soa(std::array<F*, 2> ptr) noexcept {
         return SoAPtr<F>{ptr[0], ptr[1]};
     }
 }
 
 HWY_AFTER_NAMESPACE();
 
-#endif  // ZLDSP_FFT_COMMON_STRUCTURE_HPP_
+#endif
