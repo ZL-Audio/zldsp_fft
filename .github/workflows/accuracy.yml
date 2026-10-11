@@ -6,7 +6,7 @@ on:
     branches: [ main ]
 
 concurrency:
-  group: ${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 env:
@@ -41,8 +41,12 @@ jobs:
       - name: Inject Library into Benchmarks
         shell: bash
         run: |
-          mkdir -p zldsp_fft_develop/zlfft
-          cp -r zldsp_fft/src/* zldsp_fft_develop/zlfft/
+          rm -rf zldsp_fft_develop/zldsp_fft
+          cp -R zldsp_fft/src zldsp_fft_develop/zldsp_fft
+
+      - name: Check benchmark result parsing
+        working-directory: zldsp_fft_develop
+        run: python -m unittest discover -s benchmark/tests
 
       - name: Show CPU Info (Linux)
         if: runner.os == 'Linux'
@@ -57,62 +61,62 @@ jobs:
         shell: pwsh
         run: Get-CimInstance -ClassName Win32_Processor | Select-Object Name, NumberOfCores, NumberOfLogicalProcessors
 
-      - name: CFFT Accuracy Mid Test AVX2 Double (Linux)
+      - name: CFFT Library and API Agreement AVX2 Double (Linux)
         if: runner.os == 'Linux'
         shell: bash
         working-directory: zldsp_fft_develop
         run: |
-          python -u benchmark/accuracy_mid_cfft.py 2 20 --avx2 --double
-          python -u benchmark/accuracy_cfft.py 2 20 --avx2 --double
+          python -u benchmark/run.py accuracy cfft 2 20 --avx2 --double
+          python -u benchmark/run.py accuracy cfft 2 20 --apis --avx2 --double
 
-      - name: CFFT Accuracy Mid Test AVX2 (Linux)
+      - name: CFFT Library and API Agreement AVX2 (Linux)
         if: runner.os == 'Linux'
         shell: bash
         working-directory: zldsp_fft_develop
         run: |
-          python -u benchmark/accuracy_mid_cfft.py 2 20 --avx2
-          python -u benchmark/accuracy_cfft.py 2 20 --avx2
+          python -u benchmark/run.py accuracy cfft 2 20 --avx2
+          python -u benchmark/run.py accuracy cfft 2 20 --apis --avx2
 
-      - name: CFFT Accuracy Mid Test Double
+      - name: CFFT Library and API Agreement Double
         shell: bash
         working-directory: zldsp_fft_develop
         run: |
-          python -u benchmark/accuracy_mid_cfft.py 2 20 --double
-          python -u benchmark/accuracy_cfft.py 2 20 --double
+          python -u benchmark/run.py accuracy cfft 2 20 --double
+          python -u benchmark/run.py accuracy cfft 2 20 --apis --double
 
-      - name: CFFT Accuracy Mid Test
+      - name: CFFT Library and API Agreement
         shell: bash
         working-directory: zldsp_fft_develop
         run: |
-          python -u benchmark/accuracy_mid_cfft.py 2 20
-          python -u benchmark/accuracy_cfft.py 2 20
+          python -u benchmark/run.py accuracy cfft 2 20
+          python -u benchmark/run.py accuracy cfft 2 20 --apis
 
-      - name: RFFT Accuracy Mid Test AVX2 Double (Linux)
+      - name: RFFT Library and API Agreement AVX2 Double (Linux)
         if: runner.os == 'Linux'
         shell: bash
         working-directory: zldsp_fft_develop
         run: |
-          python -u benchmark/accuracy_mid_rfft.py 2 20 --avx2 --double
-          python -u benchmark/accuracy_rfft.py 2 20 --avx2 --double
+          python -u benchmark/run.py accuracy rfft 2 20 --avx2 --double
+          python -u benchmark/run.py accuracy rfft 2 20 --apis --avx2 --double
 
-      - name: RFFT Accuracy Mid Test AVX2 (Linux)
+      - name: RFFT Library and API Agreement AVX2 (Linux)
         if: runner.os == 'Linux'
         shell: bash
         working-directory: zldsp_fft_develop
         run: |
-          python -u benchmark/accuracy_mid_rfft.py 2 20 --avx2
-          python -u benchmark/accuracy_rfft.py 2 20 --avx2
+          python -u benchmark/run.py accuracy rfft 2 20 --avx2
+          python -u benchmark/run.py accuracy rfft 2 20 --apis --avx2
 
-      - name: RFFT Accuracy Mid Test Double
+      - name: RFFT Library and API Agreement Double
         shell: bash
         working-directory: zldsp_fft_develop
         run: |
-          python -u benchmark/accuracy_mid_rfft.py 2 20 --double
-          python -u benchmark/accuracy_rfft.py 2 20 --double
+          python -u benchmark/run.py accuracy rfft 2 20 --double
+          python -u benchmark/run.py accuracy rfft 2 20 --apis --double
 
-      - name: RFFT Accuracy Mid Test
+      - name: RFFT Library and API Agreement
         shell: bash
         working-directory: zldsp_fft_develop
         run: |
-          python -u benchmark/accuracy_mid_rfft.py 2 20
-          python -u benchmark/accuracy_rfft.py 2 20
+          python -u benchmark/run.py accuracy rfft 2 20
+          python -u benchmark/run.py accuracy rfft 2 20 --apis
