@@ -58,7 +58,7 @@ namespace zldsp::fft::HWY_NAMESPACE::common {
     template <bool is_forward, typename D, typename Ptr, typename V>
     HWY_INLINE void load_complex(D d, Ptr ptr, V& r, V& i) noexcept {
         using F = hn::TFromD<D>;
-        if constexpr (std::is_same_v<Ptr, SoAPtr<F>>) {
+        if constexpr (std::is_same_v<Ptr, SoAPtr<F>> || std::is_same_v<Ptr, SoAPtr<const F>>) {
             if constexpr (is_forward) {
                 r = hn::LoadU(d, ptr.real);
                 i = hn::LoadU(d, ptr.imag);
@@ -117,7 +117,7 @@ namespace zldsp::fft::HWY_NAMESPACE::common {
      */
     template <bool is_forward, typename F, typename Ptr>
     HWY_INLINE void load_scalar(Ptr ptr, F& r, F& i) noexcept {
-        if constexpr (std::is_same_v<Ptr, SoAPtr<F>>) {
+        if constexpr (std::is_same_v<Ptr, SoAPtr<F>> || std::is_same_v<Ptr, SoAPtr<const F>>) {
             r = is_forward ? ptr.real[0] : ptr.imag[0];
             i = is_forward ? ptr.imag[0] : ptr.real[0];
         } else {
@@ -155,6 +155,17 @@ namespace zldsp::fft::HWY_NAMESPACE::common {
     template <typename F>
     [[nodiscard]] static AoSPtr<F> make_aos(std::complex<F>* ptr) noexcept {
         return AoSPtr<F>{reinterpret_cast<F*>(ptr)};
+    }
+
+    /**
+     * make an AoSPtr from a const complex pointer
+     * @tparam F
+     * @param ptr
+     * @return AoS pointer wrapper
+     */
+    template <typename F>
+    [[nodiscard]] static AoSPtr<const F> make_aos(const std::complex<F>* ptr) noexcept {
+        return AoSPtr<const F>{reinterpret_cast<const F*>(ptr)};
     }
 
     /**

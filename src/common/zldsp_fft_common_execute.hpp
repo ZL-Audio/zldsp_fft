@@ -6,6 +6,7 @@
 #endif
 
 #include <algorithm>
+#include <array>
 #include <cstddef>
 #include <type_traits>
 #include <utility>
@@ -724,6 +725,109 @@ namespace zldsp::fft::HWY_NAMESPACE::common {
                                               const F* HWY_RESTRICT w) noexcept {
         dispatch_rfft_tag<F>(cfft_order, [&](auto d) {
             execute_rfft_backward_pre_internal(d, in, out, cfft_order, w);
+        });
+    }
+
+    /**
+     * execute fused RFFT forward post-processing, spectral multiplication, and backward pre-processing, with a given SIMD tag
+     * @tparam D
+     * @tparam F
+     * @tparam SpectrumPtr
+     * @param d
+     * @param in
+     * @param spectrum
+     * @param out
+     * @param cfft_order
+     * @param w
+     */
+    template <typename D, typename F, typename SpectrumPtr>
+    HWY_INLINE void execute_rfft_convolve_internal(D d, std::array<const F*, 2> in, SpectrumPtr spectrum,
+                                                   std::array<F*, 2> out, const size_t cfft_order,
+                                                   const F* HWY_RESTRICT w) noexcept {
+        static constexpr bool real_spectrum = std::is_same_v<SpectrumPtr, const F*>;
+        static constexpr size_t lanes = hn::MaxLanes(d);
+        const size_t m = static_cast<size_t>(1) << cfft_order;
+
+        const auto spectrum_real = [&](const size_t k) {
+            if constexpr (real_spectrum) {
+                return spectrum[k];
+            } else {
+                F re, im;
+                common::load_scalar<true>(spectrum.shift(SpectrumPtr::get_complex_offset(k)), re, im);
+                return re;
+            }
+        };
+        const F r0 = in[0][0], i0 = in[1][0];
+        const F dc = (r0 + i0) * spectrum_real(0);
+        const F nyquist = (r0 - i0) * spectrum_real(m);
+        out[0][0] = (dc + nyquist) * F(0.5);
+        out[1][0] = (dc - nyquist) * F(0.5);
+
+        const size_t num_blocks = (m / 2 + lanes - 1) / lanes;
+        for (size_t b = 0; b < num_blocks; ++b) {
+            const size_t k = b * lanes + 1;
+            const size_t mirror = m - k - lanes + 1;
+            const auto r1 = hn::LoadU(d, in[0] + k);
+            const auto i1 = hn::LoadU(d, in[1] + k);
+            const auto r2 = hn::Reverse(d, hn::LoadU(d, in[0] + mirror));
+            const auto i2 = hn::Reverse(d, hn::LoadU(d, in[1] + mirror));
+
+            hn::Vec<D> h1r, h2r, h1i, h2i;
+            if constexpr (real_spectrum) {
+                h1r = hn::LoadU(d, spectrum + k);
+                h2r = hn::Reverse(d, hn::LoadU(d, spectrum + mirror));
+            } else {
+                common::load_complex<true>(d, spectrum.shift(SpectrumPtr::get_complex_offset(k)), h1r, h1i);
+                common::load_complex<true>(d, spectrum.shift(SpectrumPtr::get_complex_offset(mirror)), h2r, h2i);
+                h2r = hn::Reverse(d, h2r);
+                h2i = hn::Reverse(d, h2i);
+            }
+
+            const auto wc = hn::Load(d, w + b * lanes * 2);
+            const auto ws = hn::Load(d, w + b * lanes * 2 + lanes);
+            const auto dr = hn::Sub(h1r, h2r);
+            const auto ar = hn::NegMulAdd(ws, dr, h1r);
+            const auto br = hn::MulAdd(ws, dr, h2r);
+            const auto cr = hn::Mul(wc, dr);
+
+            auto o1r = hn::MulAdd(cr, i2, hn::Mul(ar, r1));
+            auto o1i = hn::MulAdd(cr, r2, hn::Mul(ar, i1));
+            auto o2r = hn::MulAdd(cr, i1, hn::Mul(br, r2));
+            auto o2i = hn::MulAdd(cr, r1, hn::Mul(br, i2));
+            if constexpr (!real_spectrum) {
+                const auto di = hn::Add(h1i, h2i);
+                const auto ai = hn::NegMulAdd(ws, di, h1i);
+                const auto bi = hn::MulAdd(ws, di, hn::Neg(h2i));
+                const auto ci = hn::Mul(wc, di);
+                o1r = hn::NegMulAdd(ai, i1, hn::NegMulAdd(ci, r2, o1r));
+                o1i = hn::MulAdd(ai, r1, hn::MulAdd(ci, i2, o1i));
+                o2r = hn::MulAdd(bi, i2, hn::MulAdd(ci, r1, o2r));
+                o2i = hn::NegMulAdd(bi, r2, hn::NegMulAdd(ci, i1, o2i));
+            }
+
+            hn::StoreU(o1r, d, out[0] + k);
+            hn::StoreU(o1i, d, out[1] + k);
+            hn::StoreU(hn::Reverse(d, o2r), d, out[0] + mirror);
+            hn::StoreU(hn::Reverse(d, o2i), d, out[1] + mirror);
+        }
+    }
+
+    /**
+     * execute fused RFFT forward post-processing, spectral multiplication, and backward pre-processing
+     * @tparam F
+     * @tparam SpectrumPtr
+     * @param in
+     * @param spectrum
+     * @param out
+     * @param cfft_order
+     * @param w
+     */
+    template <typename F, typename SpectrumPtr>
+    HWY_INLINE void execute_rfft_convolve(std::array<const F*, 2> in, SpectrumPtr spectrum,
+                                          std::array<F*, 2> out, const size_t cfft_order,
+                                          const F* HWY_RESTRICT w) noexcept {
+        dispatch_rfft_tag<F>(cfft_order, [&](auto d) {
+            execute_rfft_convolve_internal(d, in, spectrum, out, cfft_order, w);
         });
     }
 

@@ -69,5 +69,35 @@ namespace zldsp::fft {
         void forward_sqr_mag(F* in_buffer, F* out_buffer) noexcept {
             impl_.forward_sqr_mag(in_buffer, out_buffer);
         }
+
+        /**
+         * perform RFFT convolution with AoS spectrum
+         * @param in_buffer
+         * @param spectrum
+         * @param out_buffer
+         */
+        void convolve(const F* in_buffer, const Complex* spectrum, F* out_buffer) noexcept {
+            impl_.convolve(in_buffer, spectrum, out_buffer);
+        }
+
+        /**
+         * perform RFFT convolution with SoA spectrum
+         * @param in_buffer
+         * @param spectrum
+         * @param out_buffer
+         */
+        void convolve(const F* in_buffer, std::array<const F*, 2> spectrum, F* out_buffer) noexcept {
+            impl_.convolve(in_buffer, spectrum, out_buffer);
+        }
+
+        /**
+         * perform RFFT convolution with real spectrum
+         * @param in_buffer
+         * @param spectrum
+         * @param out_buffer
+         */
+        void convolve(const F* in_buffer, const F* spectrum, F* out_buffer) noexcept {
+            impl_.convolve(in_buffer, spectrum, out_buffer);
+        }
     };
 }
