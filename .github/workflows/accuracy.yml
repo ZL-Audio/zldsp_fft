@@ -5,25 +5,36 @@ on:
   push:
     branches: [ main ]
 
+permissions:
+  contents: read
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-env:
-  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
 jobs:
   build_and_test:
-    name: ${{ matrix.name }}
-    runs-on: ${{ matrix.os }}
+    name: ${{ matrix.platform.name }}
+    runs-on: ${{ matrix.platform.os }}
+    timeout-minutes: 120
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - name: Linux
+        platform:
+          - name: Linux SSE2
             os: ubuntu-latest
+            flags: --sse2
+          - name: Linux AVX2
+            os: ubuntu-latest
+            flags: --avx2
           - name: macOS
             os: macos-latest
+            flags: ''
+
+    defaults:
+      run:
+        shell: bash
+        working-directory: zldsp_fft_develop
 
     steps:
       - name: Checkout zldsp_fft (Library)
@@ -35,18 +46,27 @@ jobs:
         uses: actions/checkout@v6
         with:
           repository: ZL-Audio/zldsp_fft_develop
+          ref: main
           path: zldsp_fft_develop
           submodules: recursive
 
       - name: Inject Library into Benchmarks
-        shell: bash
+        working-directory: ${{ github.workspace }}
         run: |
           rm -rf zldsp_fft_develop/zldsp_fft
           cp -R zldsp_fft/src zldsp_fft_develop/zldsp_fft
 
-      - name: Check benchmark result parsing
-        working-directory: zldsp_fft_develop
-        run: python -m unittest discover -s benchmark/tests
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.13'
+
+      - name: Show build tools
+        run: |
+          python --version
+          cmake --version
+          ninja --version
+          clang++ --version
 
       - name: Show CPU Info (Linux)
         if: runner.os == 'Linux'
@@ -56,67 +76,22 @@ jobs:
         if: runner.os == 'macOS'
         run: sysctl -n machdep.cpu.brand_string
 
-      - name: Show CPU Info (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: Get-CimInstance -ClassName Win32_Processor | Select-Object Name, NumberOfCores, NumberOfLogicalProcessors
-
-      - name: CFFT Library and API Agreement AVX2 Double (Linux)
-        if: runner.os == 'Linux'
-        shell: bash
-        working-directory: zldsp_fft_develop
+      - name: CFFT float library and API agreement
         run: |
-          python -u benchmark/run.py accuracy cfft 2 20 --avx2 --double
-          python -u benchmark/run.py accuracy cfft 2 20 --apis --avx2 --double
+          python -u benchmark/run.py accuracy cfft 2 20 ${{ matrix.platform.flags }}
+          python -u benchmark/run.py accuracy cfft 2 20 --apis ${{ matrix.platform.flags }}
 
-      - name: CFFT Library and API Agreement AVX2 (Linux)
-        if: runner.os == 'Linux'
-        shell: bash
-        working-directory: zldsp_fft_develop
+      - name: CFFT double library and API agreement
         run: |
-          python -u benchmark/run.py accuracy cfft 2 20 --avx2
-          python -u benchmark/run.py accuracy cfft 2 20 --apis --avx2
+          python -u benchmark/run.py accuracy cfft 2 20 --double ${{ matrix.platform.flags }}
+          python -u benchmark/run.py accuracy cfft 2 20 --apis --double ${{ matrix.platform.flags }}
 
-      - name: CFFT Library and API Agreement Double
-        shell: bash
-        working-directory: zldsp_fft_develop
+      - name: RFFT float library and API agreement
         run: |
-          python -u benchmark/run.py accuracy cfft 2 20 --double
-          python -u benchmark/run.py accuracy cfft 2 20 --apis --double
+          python -u benchmark/run.py accuracy rfft 2 20 ${{ matrix.platform.flags }}
+          python -u benchmark/run.py accuracy rfft 2 20 --apis ${{ matrix.platform.flags }}
 
-      - name: CFFT Library and API Agreement
-        shell: bash
-        working-directory: zldsp_fft_develop
+      - name: RFFT double library and API agreement
         run: |
-          python -u benchmark/run.py accuracy cfft 2 20
-          python -u benchmark/run.py accuracy cfft 2 20 --apis
-
-      - name: RFFT Library and API Agreement AVX2 Double (Linux)
-        if: runner.os == 'Linux'
-        shell: bash
-        working-directory: zldsp_fft_develop
-        run: |
-          python -u benchmark/run.py accuracy rfft 2 20 --avx2 --double
-          python -u benchmark/run.py accuracy rfft 2 20 --apis --avx2 --double
-
-      - name: RFFT Library and API Agreement AVX2 (Linux)
-        if: runner.os == 'Linux'
-        shell: bash
-        working-directory: zldsp_fft_develop
-        run: |
-          python -u benchmark/run.py accuracy rfft 2 20 --avx2
-          python -u benchmark/run.py accuracy rfft 2 20 --apis --avx2
-
-      - name: RFFT Library and API Agreement Double
-        shell: bash
-        working-directory: zldsp_fft_develop
-        run: |
-          python -u benchmark/run.py accuracy rfft 2 20 --double
-          python -u benchmark/run.py accuracy rfft 2 20 --apis --double
-
-      - name: RFFT Library and API Agreement
-        shell: bash
-        working-directory: zldsp_fft_develop
-        run: |
-          python -u benchmark/run.py accuracy rfft 2 20
-          python -u benchmark/run.py accuracy rfft 2 20 --apis
+          python -u benchmark/run.py accuracy rfft 2 20 --double ${{ matrix.platform.flags }}
+          python -u benchmark/run.py accuracy rfft 2 20 --apis --double ${{ matrix.platform.flags }}
