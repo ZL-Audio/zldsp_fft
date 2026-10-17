@@ -6,6 +6,7 @@
 #endif
 
 #include <algorithm>
+#include <bit>
 #include <complex>
 #include <cstddef>
 #include <new>
@@ -32,6 +33,26 @@ namespace zldsp::fft::HWY_NAMESPACE::common {
         kRadix4LastPass,
     };
 
+    struct MacroTwiddleStage {
+        size_t w_stride = 0;
+        // use zero for dense SIMD-block tables, otherwise store
+        // 6 * tile_width fine factors followed by six scalar factors per tile
+        size_t tile_width = 0;
+    };
+
+    /**
+     * get the SIMD-aligned macro twiddle tile width from the L1 data-cache budget
+     * @tparam F
+     * @return power-of-two tile width, capped at 256 butterfly positions
+     */
+    template <typename F>
+    [[nodiscard]] inline size_t get_macro_twiddle_tile_width() {
+        // budget half of L1 for the fine factors and reconstruction tile
+        const size_t max_tile_width = get_l1d_cache_size() / (24 * sizeof(F));
+        static constexpr size_t lanes = hn::MaxLanes(hn::ScalableTag<F>());
+        return std::max(lanes, std::min<size_t>(256, std::bit_floor(max_tile_width)));
+    }
+
     template <typename T>
     [[nodiscard]] inline hwy::AlignedFreeUniquePtr<T[]> allocate_aligned(const size_t count) {
         auto ptr = hwy::AllocateAligned<T>(count);
@@ -55,7 +76,8 @@ namespace zldsp::fft::HWY_NAMESPACE::common {
 
         size_t num_macro_stages = 0;
         hwy::AlignedFreeUniquePtr<F[]> macro_w;
-        std::vector<size_t> macro_w_strides;
+        std::vector<MacroTwiddleStage> macro_stages;
+        hwy::AlignedFreeUniquePtr<F[]> macro_w_tile;
         size_t macro_stride = 0;
 
         size_t num_micro_ffts = 0;
@@ -249,28 +271,48 @@ namespace zldsp::fft::HWY_NAMESPACE::common {
      * @param order
      * @param num_stages
      * @param w
-     * @param w_strides
+     * @param stages
      * @return stride size
      */
     template <typename F>
     inline size_t init_cooley_tukey_cfft_state(const size_t order, const size_t num_stages,
                                                hwy::AlignedFreeUniquePtr<F[]>& w,
-                                               std::vector<size_t>& w_strides) {
+                                               std::vector<MacroTwiddleStage>& stages) {
         static constexpr size_t lanes = hn::MaxLanes(hn::ScalableTag<F>());
         const size_t n = static_cast<size_t>(1) << order;
-        w_strides.resize(num_stages);
-        // calculate twiddle stride for each stage
+        stages.resize(num_stages);
+        size_t tile_width = 0;
+        size_t min_compact_order = 0;
+        if constexpr (HWY_TARGET == HWY_AVX2) {
+            tile_width = get_macro_twiddle_tile_width<F>();
+            min_compact_order = get_hybrid_order_thresholds<F>().second;
+        }
+        // use compact AVX2 tables for nodes at or above the hybrid switching order
         {
             for (size_t i = 0; i < num_stages; ++i) {
                 const size_t sub_n = n >> (2 * i);
                 const size_t width = sub_n >> 2;
                 const size_t num_blocks = std::max<size_t>(1, width / lanes);
-                w_strides[i] = num_blocks * 6 * lanes;
+                auto& stage = stages[i];
+                stage = {num_blocks * 6 * lanes, 0};
+                if constexpr (HWY_TARGET == HWY_AVX2) {
+                    if (order - 2 * i >= min_compact_order) {
+                        const size_t stage_tile_width = std::min(tile_width, width);
+                        const size_t coarse_scalars = 6 * (width / stage_tile_width);
+                        // keep every subsequent stage aligned for SIMD loads
+                        const size_t compact_stride = 6 * stage_tile_width +
+                                                      ((coarse_scalars + lanes - 1) / lanes) * lanes;
+                        stage = {compact_stride, stage_tile_width};
+                    }
+                }
             }
         }
         // allocate twiddle storage
         {
-            const auto w_size = std::accumulate(w_strides.begin(), w_strides.end(), static_cast<size_t>(0));
+            size_t w_size = 0;
+            for (const auto& stage : stages) {
+                w_size += stage.w_stride;
+            }
             w = common::allocate_aligned<F>(w_size);
         }
         // calculate twiddle values
@@ -279,7 +321,9 @@ namespace zldsp::fft::HWY_NAMESPACE::common {
             for (size_t i = 0; i < num_stages; ++i) {
                 const size_t sub_n = n >> (2 * i);
                 const size_t width = sub_n >> 2;
-                const size_t num_blocks = std::max<size_t>(1, width / lanes);
+                const auto& stage = stages[i];
+                const size_t fine_width = stage.tile_width != 0 ? stage.tile_width : width;
+                const size_t num_blocks = std::max<size_t>(1, fine_width / lanes);
                 const double phase_step = -2.0 / static_cast<double>(sub_n);
                 for (size_t b = 0; b < num_blocks; ++b) {
                     for (size_t l = 0; l < lanes; ++l) {
@@ -288,12 +332,23 @@ namespace zldsp::fft::HWY_NAMESPACE::common {
                         static constexpr int kMultipliers[] = {1, 2, 3};
                         for (size_t m = 0; m < 3; ++m) {
                             const auto a = phase * static_cast<double>(kMultipliers[m]);
-                            w[offset + 2 * m * lanes + l] = static_cast<F>(math::cospi(a));
-                            w[offset + (2 * m + 1) * lanes + l] = static_cast<F>(math::sinpi(a));
+                            w[offset + b * 6 * lanes + 2 * m * lanes + l] = static_cast<F>(math::cospi(a));
+                            w[offset + b * 6 * lanes + (2 * m + 1) * lanes + l] = static_cast<F>(math::sinpi(a));
                         }
                     }
-                    offset += 6 * lanes;
                 }
+                if (stage.tile_width != 0) {
+                    F* coarse = w.get() + offset + 6 * stage.tile_width;
+                    for (size_t q = 0; q < width / stage.tile_width; ++q) {
+                        const double phase = static_cast<double>(q * stage.tile_width) * phase_step;
+                        for (size_t m = 0; m < 3; ++m) {
+                            const double a = phase * static_cast<double>(m + 1);
+                            coarse[q * 6 + 2 * m] = static_cast<F>(math::cospi(a));
+                            coarse[q * 6 + 2 * m + 1] = static_cast<F>(math::sinpi(a));
+                        }
+                    }
+                }
+                offset += stage.w_stride;
             }
         }
         return get_cfft_stride<F>(static_cast<size_t>(1) << order);
@@ -349,7 +404,14 @@ namespace zldsp::fft::HWY_NAMESPACE::common {
                                                                   state.micro_w, state.micro_w_strides);
 
             state.macro_stride = common::init_cooley_tukey_cfft_state(state.cfft_order, state.num_macro_stages,
-                                                                      state.macro_w, state.macro_w_strides);
+                                                                      state.macro_w, state.macro_stages);
+            size_t tile_width = 0;
+            for (const auto& stage : state.macro_stages) {
+                tile_width = std::max(tile_width, stage.tile_width);
+            }
+            if (tile_width != 0) {
+                state.macro_w_tile = common::allocate_aligned<F>(6 * tile_width);
+            }
 
             state.num_micro_ffts = static_cast<size_t>(1) << (state.cfft_order - state.micro_order);
             const size_t micro_fft_size = static_cast<size_t>(1) << state.micro_order;

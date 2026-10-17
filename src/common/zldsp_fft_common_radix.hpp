@@ -905,20 +905,20 @@ namespace zldsp::fft::HWY_NAMESPACE::common {
     }
 
     /**
-     * perform a Cooley-Tukey DIF radix-4 first pass and convert data from AoS/SoA to AoSoA
+     * perform a subrange of a Cooley-Tukey DIF radix-4 first pass with the full node's arm spacing
      * @tparam is_forward
      * @tparam F
      * @tparam Ptr
      * @param in
      * @param out_aosoa
      * @param n
+     * @param count number of butterfly positions, starting at the shifted input/output pointers
      * @param w
      */
     template <bool is_forward, typename F, typename Ptr>
-    inline void radix4_first_pass_dif_fused_aosoa(Ptr in, F* HWY_RESTRICT out_aosoa,
-                                                  const size_t n, const F* HWY_RESTRICT w) noexcept {
-        out_aosoa = static_cast<F*>(HWY_ASSUME_ALIGNED(out_aosoa, HWY_ALIGNMENT));
-
+    inline void radix4_first_pass_dif_fused_aosoa_range(Ptr in, F* HWY_RESTRICT out_aosoa,
+                                                       const size_t n, const size_t count,
+                                                       const F* HWY_RESTRICT w) noexcept {
         static constexpr hn::ScalableTag<F> d;
         static constexpr size_t lanes = hn::MaxLanes(d);
 
@@ -934,7 +934,9 @@ namespace zldsp::fft::HWY_NAMESPACE::common {
 
         HWY_ASSUME(quarter_n >= lanes);
         HWY_ASSUME((quarter_n % lanes) == 0);
-        for (size_t i = 0; i < quarter_n; i += lanes) {
+        HWY_ASSUME(count > 0 && count <= quarter_n);
+        HWY_ASSUME((count % lanes) == 0);
+        for (size_t i = 0; i < count; i += lanes) {
             const Ptr in_shift = in.shift(Ptr::get_complex_offset(i));
 
             const F* HWY_RESTRICT w_shift = w + i * 6;
@@ -998,15 +1000,16 @@ namespace zldsp::fft::HWY_NAMESPACE::common {
     }
 
     /**
-     * perform one Cooley-Tukey DIF radix-4 block when width >= 8
+     * perform a subrange of a Cooley-Tukey DIF radix-4 block with the full node's arm spacing
      * @tparam F
      * @param workspace
      * @param width
+     * @param count number of butterfly positions, starting at the shifted workspace pointer
      * @param w
      */
     template <typename F>
-    HWY_INLINE void radix4_dif_aosoa_block(F* HWY_RESTRICT workspace, const size_t width,
-                                           const F* HWY_RESTRICT w) noexcept {
+    HWY_INLINE void radix4_dif_aosoa_block_range(F* HWY_RESTRICT workspace, const size_t width,
+                                                 const size_t count, const F* HWY_RESTRICT w) noexcept {
         static constexpr hn::ScalableTag<F> d;
         static constexpr size_t lanes = hn::MaxLanes(d);
 
@@ -1016,7 +1019,9 @@ namespace zldsp::fft::HWY_NAMESPACE::common {
 
         HWY_ASSUME(width >= lanes);
         HWY_ASSUME((width % lanes) == 0);
-        for (size_t i = 0; i < width; i += lanes) {
+        HWY_ASSUME(count > 0 && count <= width);
+        HWY_ASSUME((count % lanes) == 0);
+        for (size_t i = 0; i < count; i += lanes) {
             const F* HWY_RESTRICT w_shift = w + i * 6;
             F* HWY_RESTRICT data_shift = workspace + (i << 1);
 
@@ -1084,6 +1089,89 @@ namespace zldsp::fft::HWY_NAMESPACE::common {
     }
 
     /**
+     * perform a Cooley-Tukey DIF radix-4 first pass and convert data from AoS/SoA to AoSoA
+     * @tparam is_forward
+     * @tparam F
+     * @tparam Ptr
+     * @param in
+     * @param out_aosoa
+     * @param n
+     * @param w
+     */
+    template <bool is_forward, typename F, typename Ptr>
+    inline void radix4_first_pass_dif_fused_aosoa(Ptr in, F* HWY_RESTRICT out_aosoa,
+                                                  const size_t n, const F* HWY_RESTRICT w) noexcept {
+        out_aosoa = static_cast<F*>(HWY_ASSUME_ALIGNED(out_aosoa, HWY_ALIGNMENT));
+        radix4_first_pass_dif_fused_aosoa_range<is_forward>(in, out_aosoa, n, n >> 2, w);
+    }
+
+    /**
+     * perform one Cooley-Tukey DIF radix-4 block when width >= lanes
+     * @tparam F
+     * @param workspace
+     * @param width
+     * @param w
+     */
+    template <typename F>
+    HWY_INLINE void radix4_dif_aosoa_block(F* HWY_RESTRICT workspace, const size_t width,
+                                           const F* HWY_RESTRICT w) noexcept {
+        radix4_dif_aosoa_block_range(workspace, width, width, w);
+    }
+
+    /**
+     * reconstruct one macro twiddle tile before entering the radix-4 butterfly
+     * @tparam F
+     * @param w
+     * @param tile_width
+     * @param tile_index
+     * @param tile
+     */
+    template <typename F>
+    HWY_NOINLINE void reconstruct_macro_twiddle_tile(const F* HWY_RESTRICT w, const size_t tile_width,
+                                                      const size_t tile_index, F* HWY_RESTRICT tile) noexcept {
+        static constexpr hn::ScalableTag<F> d;
+        static constexpr size_t lanes = hn::MaxLanes(d);
+        const F* coarse = w + 6 * tile_width + 6 * tile_index;
+        for (size_t m = 0; m < 3; ++m) {
+            const auto cr = hn::Set(d, coarse[2 * m]);
+            const auto ci = hn::Set(d, coarse[2 * m + 1]);
+            for (size_t r = 0; r < tile_width; r += lanes) {
+                const size_t offset = 6 * r + 2 * m * lanes;
+                const auto fr = hn::Load(d, w + offset);
+                const auto fi = hn::Load(d, w + offset + lanes);
+                const auto wr = hn::NegMulAdd(fi, ci, hn::Mul(fr, cr));
+                const auto wi = hn::MulAdd(fi, cr, hn::Mul(fr, ci));
+                hn::Store(wr, d, tile + offset);
+                hn::Store(wi, d, tile + offset + lanes);
+            }
+        }
+    }
+
+    /**
+     * perform a Cooley-Tukey DIF radix-4 first pass with compact twiddles
+     * @tparam is_forward
+     * @tparam F
+     * @tparam Ptr
+     * @param in
+     * @param out_aosoa
+     * @param n
+     * @param w
+     * @param tile_width
+     * @param tile
+     */
+    template <bool is_forward, typename F, typename Ptr>
+    inline void radix4_first_pass_dif_compact_aosoa(Ptr in, F* HWY_RESTRICT out_aosoa,
+                                                    const size_t n, const F* HWY_RESTRICT w,
+                                                    const size_t tile_width, F* HWY_RESTRICT tile) noexcept {
+        const size_t width = n >> 2;
+        for (size_t begin = 0; begin < width; begin += tile_width) {
+            reconstruct_macro_twiddle_tile(w, tile_width, begin / tile_width, tile);
+            radix4_first_pass_dif_fused_aosoa_range<is_forward>(
+                in.shift(Ptr::get_complex_offset(begin)), out_aosoa + 2 * begin, n, tile_width, tile);
+        }
+    }
+
+    /**
      * perform a complete Cooley-Tukey DIF radix-4 stage
      * @tparam F
      * @param workspace
@@ -1108,12 +1196,12 @@ namespace zldsp::fft::HWY_NAMESPACE::common {
      * @param width
      * @param num_stages
      * @param w
-     * @param w_strides
+     * @param stages
      */
     template <typename F>
     inline void radix4_dif_aosoa_depth_first(F* HWY_RESTRICT workspace, const size_t n, const size_t width,
                                              const size_t num_stages, const F* HWY_RESTRICT w,
-                                             const size_t* HWY_RESTRICT w_strides) noexcept {
+                                             const MacroTwiddleStage* HWY_RESTRICT stages) noexcept {
         if (num_stages == 1) {
             radix4_dif_aosoa_inplace(workspace, n, width, w);
             return;
@@ -1121,7 +1209,7 @@ namespace zldsp::fft::HWY_NAMESPACE::common {
 
         const size_t sub_n = width << 2;
         const size_t next_width = width >> 2;
-        const F* HWY_RESTRICT next_w = w + w_strides[0];
+        const F* HWY_RESTRICT next_w = w + stages[0].w_stride;
         for (size_t block = 0; block < n; block += sub_n) {
             F* HWY_RESTRICT block_workspace = workspace + (block << 1);
             radix4_dif_aosoa_block(block_workspace, width, w);
@@ -1131,7 +1219,44 @@ namespace zldsp::fft::HWY_NAMESPACE::common {
             } else {
                 radix4_dif_aosoa_depth_first(block_workspace,
                                              sub_n, next_width, num_stages - 1,
-                                             next_w, w_strides + 1);
+                                             next_w, stages + 1);
+            }
+        }
+    }
+
+    /**
+     * perform macro Cooley-Tukey DIF stages depth-first with compact twiddles
+     * @tparam F
+     * @param workspace
+     * @param n
+     * @param width
+     * @param num_stages
+     * @param w
+     * @param stages
+     * @param tile
+     */
+    template <typename F>
+    inline void radix4_dif_compact_aosoa_depth_first(F* HWY_RESTRICT workspace, const size_t n, const size_t width,
+                                                     const size_t num_stages, const F* HWY_RESTRICT w,
+                                                     const MacroTwiddleStage* HWY_RESTRICT stages,
+                                                     F* HWY_RESTRICT tile) noexcept {
+        const size_t tile_width = stages[0].tile_width;
+        if (tile_width == 0) {
+            // use dense traversal for this stage and all smaller descendants
+            radix4_dif_aosoa_depth_first(workspace, n, width, num_stages, w, stages);
+            return;
+        }
+        const size_t sub_n = width << 2;
+        for (size_t block = 0; block < n; block += sub_n) {
+            F* block_workspace = workspace + 2 * block;
+            for (size_t begin = 0; begin < width; begin += tile_width) {
+                reconstruct_macro_twiddle_tile(w, tile_width, begin / tile_width, tile);
+                radix4_dif_aosoa_block_range(block_workspace + 2 * begin, width, tile_width, tile);
+            }
+            // finish the entire parent before descendants reuse the tile
+            if (num_stages > 1) {
+                radix4_dif_compact_aosoa_depth_first(block_workspace, sub_n, width >> 2, num_stages - 1,
+                                                      w + stages[0].w_stride, stages + 1, tile);
             }
         }
     }

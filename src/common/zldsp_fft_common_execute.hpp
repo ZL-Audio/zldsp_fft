@@ -475,6 +475,67 @@ namespace zldsp::fft::HWY_NAMESPACE::common {
     }
 
     /**
+     * execute macro Cooley-Tukey DIF CFFT into the internal workspace
+     * @tparam is_forward
+     * @tparam F
+     * @tparam InPtr
+     * @param state CFFT state with at least one macro stage
+     * @param in
+     */
+    template <bool is_forward, typename F, typename InPtr>
+    HWY_INLINE void execute_hybrid_macro(const CFFTState<F>& state, InPtr in) noexcept {
+        F* HWY_RESTRICT macro_workspace = state.workspace.get();
+        const F* HWY_RESTRICT w = state.macro_w.get();
+        if constexpr (HWY_TARGET == HWY_AVX2) {
+            common::radix4_first_pass_dif_compact_aosoa<is_forward>(
+                in, macro_workspace, state.cfft_size, w, state.macro_stages[0].tile_width, state.macro_w_tile.get());
+        } else {
+            common::radix4_first_pass_dif_fused_aosoa<is_forward>(in, macro_workspace, state.cfft_size, w);
+        }
+        w += state.macro_stages[0].w_stride;
+
+        const size_t remaining_stages = state.num_macro_stages - 1;
+        if (remaining_stages != 0) {
+            const size_t width = state.cfft_size >> 4;
+            if constexpr (HWY_TARGET == HWY_AVX2) {
+                common::radix4_dif_compact_aosoa_depth_first(macro_workspace,
+                                                             state.cfft_size, width, remaining_stages,
+                                                             w, state.macro_stages.data() + 1, state.macro_w_tile.get());
+            } else {
+                common::radix4_dif_aosoa_depth_first(macro_workspace,
+                                                     state.cfft_size, width, remaining_stages,
+                                                     w, state.macro_stages.data() + 1);
+            }
+        }
+    }
+
+    /**
+     * dispatch the hybrid CFFT tail after the macro pass has consumed the input
+     * @tparam is_forward
+     * @tparam F
+     * @tparam OutPtr
+     * @param state
+     * @param out
+     */
+    template <bool is_forward, typename F, typename OutPtr>
+    HWY_INLINE void dispatch_hybrid_tail(const CFFTState<F>& state, OutPtr out) noexcept {
+        switch (state.micro_order) {
+        case 8:
+            execute_hybrid_tail<8, is_forward>(state, out);
+            return;
+        case 9:
+            execute_hybrid_tail<9, is_forward>(state, out);
+            return;
+        case 10:
+            execute_hybrid_tail<10, is_forward>(state, out);
+            return;
+        default:
+            execute_hybrid_tail<0, is_forward>(state, out);
+            return;
+        }
+    }
+
+    /**
      * execute CFFT
      * @tparam is_forward
      * @tparam F
@@ -494,37 +555,8 @@ namespace zldsp::fft::HWY_NAMESPACE::common {
                                                                 state.micro_w.get(), state.micro_w_strides);
             return;
         }
-        // execute macro Cooley-Tukey DIF CFFT
-        {
-            F* HWY_RESTRICT macro_workspace = state.workspace.get();
-            const F* HWY_RESTRICT w = state.macro_w.get();
-            common::radix4_first_pass_dif_fused_aosoa<is_forward>(in, macro_workspace, state.cfft_size, w);
-            w += state.macro_w_strides[0];
-
-            const size_t remaining_stages = state.num_macro_stages - 1;
-            if (remaining_stages != 0) {
-                const size_t width = state.cfft_size >> 4;
-                common::radix4_dif_aosoa_depth_first(macro_workspace,
-                                                     state.cfft_size, width, remaining_stages,
-                                                     w, state.macro_w_strides.data() + 1);
-            }
-        }
-
-        // dispatch one fixed micro order per transform
-        switch (state.micro_order) {
-        case 8:
-            execute_hybrid_tail<8, is_forward>(state, out);
-            return;
-        case 9:
-            execute_hybrid_tail<9, is_forward>(state, out);
-            return;
-        case 10:
-            execute_hybrid_tail<10, is_forward>(state, out);
-            return;
-        default:
-            execute_hybrid_tail<0, is_forward>(state, out);
-            return;
-        }
+        execute_hybrid_macro<is_forward>(state, in);
+        dispatch_hybrid_tail<is_forward>(state, out);
     }
 
     /**
@@ -640,6 +672,80 @@ namespace zldsp::fft::HWY_NAMESPACE::common {
                                               const F* HWY_RESTRICT w) noexcept {
         dispatch_rfft_tag<F>(cfft_order, [&](auto d) {
             execute_rfft_forward_post_internal(d, in, out, cfft_order, w);
+        });
+    }
+
+    /**
+     * execute in-place RFFT forward post-processing, with a given SIMD tag
+     * @tparam D
+     * @tparam F
+     * @tparam Ptr
+     * @param d
+     * @param buffer cfft_size + 1 complex values, with disjoint planes for SoA
+     * @param cfft_order
+     * @param w
+     */
+    template <typename D, typename F, typename Ptr>
+    HWY_INLINE void execute_rfft_forward_post_inplace_internal(D d, Ptr buffer,
+                                                              const size_t cfft_order,
+                                                              const F* HWY_RESTRICT w) noexcept {
+        const size_t cfft_size = static_cast<size_t>(1) << cfft_order;
+        static constexpr size_t lanes = hn::MaxLanes(d);
+
+        F r0, i0;
+        common::load_scalar<true>(buffer, r0, i0);
+        common::store_scalar<true>(buffer, r0 + i0, static_cast<F>(0.0));
+        common::store_scalar<true>(buffer.shift(Ptr::get_complex_offset(cfft_size)),
+                                   r0 - i0, static_cast<F>(0.0));
+
+        const size_t num_elements = cfft_size >> 1;
+        const size_t num_blocks = (num_elements + lanes - 1) / lanes;
+
+        for (size_t b = 0; b < num_blocks; ++b) {
+            const size_t k = b * lanes + 1;
+            const size_t mirror = cfft_size - k - lanes + 1;
+
+            // load both mirrored blocks before storing either, including the shared center bin
+            hn::Vec<D> r1, i1, r2_raw, i2_raw;
+            common::load_complex<true>(d, buffer.shift(Ptr::get_complex_offset(k)), r1, i1);
+            common::load_complex<true>(d, buffer.shift(Ptr::get_complex_offset(mirror)), r2_raw, i2_raw);
+            const auto r2 = hn::Reverse(d, r2_raw);
+            const auto i2 = hn::Reverse(d, i2_raw);
+
+            const auto wc = hn::Load(d, &w[b * lanes * 2]);
+            const auto ws = hn::Load(d, &w[b * lanes * 2 + lanes]);
+            const auto si = hn::Add(i1, i2);
+            const auto dr = hn::Sub(r1, r2);
+
+            const auto xr_tmp = hn::MulAdd(si, wc, r1);
+            const auto xr_k = hn::NegMulAdd(dr, ws, xr_tmp);
+            const auto xi_tmp = hn::NegMulAdd(si, ws, i1);
+            const auto xi_k = hn::NegMulAdd(dr, wc, xi_tmp);
+
+            const auto xr_mirror_tmp = hn::NegMulAdd(si, wc, r2);
+            const auto xr_mirror = hn::MulAdd(dr, ws, xr_mirror_tmp);
+            const auto xi_mirror_tmp = hn::NegMulAdd(si, ws, i2);
+            const auto xi_mirror = hn::NegMulAdd(dr, wc, xi_mirror_tmp);
+
+            common::store_complex<true>(d, buffer.shift(Ptr::get_complex_offset(k)), xr_k, xi_k);
+            common::store_complex<true>(d, buffer.shift(Ptr::get_complex_offset(mirror)),
+                                        hn::Reverse(d, xr_mirror), hn::Reverse(d, xi_mirror));
+        }
+    }
+
+    /**
+     * execute in-place RFFT forward post-processing through a single pointer wrapper
+     * @tparam F
+     * @tparam Ptr
+     * @param buffer
+     * @param cfft_order
+     * @param w
+     */
+    template <typename F, typename Ptr>
+    HWY_INLINE void execute_rfft_forward_post_inplace(Ptr buffer, const size_t cfft_order,
+                                                     const F* HWY_RESTRICT w) noexcept {
+        dispatch_rfft_tag<F>(cfft_order, [&](auto d) {
+            execute_rfft_forward_post_inplace_internal(d, buffer, cfft_order, w);
         });
     }
 

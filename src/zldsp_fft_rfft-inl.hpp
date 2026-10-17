@@ -8,6 +8,8 @@
 #include <array>
 #include <complex>
 #include <cstddef>
+#include <cstdint>
+#include <limits>
 #include <type_traits>
 
 #include <hwy/highway.h>
@@ -32,6 +34,11 @@ namespace zldsp::fft::HWY_NAMESPACE {
         using Complex = std::complex<F>;
 
     private:
+#ifdef ZLDSP_EXPERIMENT_RUNTIME_OUTPUT_REUSE
+        bool reuse_outputs_ = true;
+#else
+        static constexpr bool reuse_outputs_ = true;
+#endif
         common::CFFTState<F> state_;
         size_t rfft_size_;
         hwy::AlignedFreeUniquePtr<F[]> rfft_w_;
@@ -40,6 +47,15 @@ namespace zldsp::fft::HWY_NAMESPACE {
         common::SoAPtr<F> backward_cfft_input_;
 
     public:
+#ifdef ZLDSP_EXPERIMENT_RUNTIME_OUTPUT_REUSE
+        /**
+         * select RFFT output reuse for throughput comparisons
+         * @param enabled
+         */
+        void set_experiment_output_reuse(const bool enabled) noexcept {
+            reuse_outputs_ = enabled;
+        }
+#endif
         explicit RFFT(const size_t rfft_order) : rfft_size_(static_cast<size_t>(1) << rfft_order) {
             state_.cfft_order = rfft_order - 1;
             state_.cfft_size = static_cast<size_t>(1) << state_.cfft_order;
@@ -167,6 +183,45 @@ namespace zldsp::fft::HWY_NAMESPACE {
 
     private:
         /**
+         * check whether two scalar buffer ranges overlap
+         * @param a
+         * @param a_count
+         * @param b
+         * @param b_count
+         */
+        [[nodiscard]] static bool buffers_overlap(const F* a, const size_t a_count,
+                                                 const F* b, const size_t b_count) noexcept {
+            constexpr auto max_address = std::numeric_limits<std::uintptr_t>::max();
+            if (a_count > max_address / sizeof(F) || b_count > max_address / sizeof(F)) {
+                return true;
+            }
+            const auto a_begin = reinterpret_cast<std::uintptr_t>(a);
+            const auto b_begin = reinterpret_cast<std::uintptr_t>(b);
+            const auto a_bytes = static_cast<std::uintptr_t>(a_count) * sizeof(F);
+            const auto b_bytes = static_cast<std::uintptr_t>(b_count) * sizeof(F);
+            if (a_bytes > max_address - a_begin || b_bytes > max_address - b_begin) {
+                return true;
+            }
+            return a_begin < b_begin + b_bytes && b_begin < a_begin + a_bytes;
+        }
+
+        /**
+         * check whether an RFFT input spectrum overlaps the real output
+         * @tparam InPtr
+         * @param in
+         * @param out
+         */
+        template <typename InPtr>
+        [[nodiscard]] bool backward_input_overlaps_output(InPtr in, const F* out) const noexcept {
+            if constexpr (std::is_same_v<InPtr, common::SoAPtr<F>>) {
+                return buffers_overlap(in.real, state_.cfft_size + 1, out, rfft_size_) ||
+                       buffers_overlap(in.imag, state_.cfft_size + 1, out, rfft_size_);
+            } else {
+                return buffers_overlap(in.interleaved, rfft_size_ + 2, out, rfft_size_);
+            }
+        }
+
+        /**
          * execute RFFT convolution
          * @tparam SpectrumPtr
          * @param in
@@ -191,6 +246,24 @@ namespace zldsp::fft::HWY_NAMESPACE {
          */
         template <typename OutPtr>
         void execute_forward(F* in, OutPtr out) noexcept {
+            if constexpr (std::is_same_v<OutPtr, common::SoAPtr<F>>) {
+                const size_t bins = state_.cfft_size + 1;
+                if (state_.num_macro_stages != 0 && reuse_outputs_ &&
+                    !buffers_overlap(in, rfft_size_, out.real, bins) &&
+                    !buffers_overlap(in, rfft_size_, out.imag, bins) &&
+                    !buffers_overlap(out.real, bins, out.imag, bins)) {
+                    common::execute_cfft<true>(state_, common::make_aos(reinterpret_cast<Complex*>(in)), out);
+                    common::execute_rfft_forward_post_inplace(out, state_.cfft_order, rfft_w_.get());
+                    return;
+                }
+            } else {
+                if (state_.num_macro_stages != 0 && reuse_outputs_ &&
+                    !buffers_overlap(in, rfft_size_, out.interleaved, rfft_size_ + 2)) {
+                    common::execute_cfft<true>(state_, common::make_aos(reinterpret_cast<Complex*>(in)), out);
+                    common::execute_rfft_forward_post_inplace(out, state_.cfft_order, rfft_w_.get());
+                    return;
+                }
+            }
             common::execute_cfft<true>(state_, common::make_aos(reinterpret_cast<Complex*>(in)),
                                        forward_cfft_output_);
             common::execute_rfft_forward_post(forward_cfft_output_, out,
@@ -205,6 +278,14 @@ namespace zldsp::fft::HWY_NAMESPACE {
          */
         template <typename InPtr>
         void execute_backward(InPtr in, F* out) noexcept {
+            if (state_.num_macro_stages != 0 && reuse_outputs_ && !backward_input_overlaps_output(in, out)) {
+                // reuse the real output as SoA scratch, ending each restricted view before changing layouts
+                common::execute_rfft_backward_pre(in, common::make_soa<F>({out, out + state_.cfft_size}),
+                                                   state_.cfft_order, rfft_w_.get());
+                common::execute_hybrid_macro<false>(state_, common::make_soa<F>({out, out + state_.cfft_size}));
+                common::dispatch_hybrid_tail<false>(state_, common::make_aos<F>(reinterpret_cast<Complex*>(out)));
+                return;
+            }
             common::execute_rfft_backward_pre(in, backward_cfft_input_,
                                               state_.cfft_order, rfft_w_.get());
             common::execute_cfft<false>(state_, backward_cfft_input_,
